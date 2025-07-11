@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>魚機遊戲</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 主選單 -->
+    <div id="mainMenu" class="screen" style="display: none;">
+        <div class="menu-container">
+            <div class="menu-header">
+                <h1>魚機遊戲</h1>
+                <div class="player-info">
+                    <div class="player-avatar"></div>
+                    <div class="player-details">
+                        <div class="player-name">玩家名稱</div>
+                        <div class="player-level">等級: <span id="playerLevel">1</span></div>
+                        <div class="player-money">金錢: $<span id="playerMoney">0</span></div>
+                        <div class="player-exp">經驗值: <span id="playerExp">0</span>/<span id="playerExpMax">1000</span></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="menu-content">
+                <div class="room-selection">
+                    <h2>選擇房間</h2>
+                    <div class="rooms-grid" id="roomsGrid">
+                        <!-- 動態生成房間列表 -->
+                    </div>
+                </div>
+                
+                <div class="bet-section">
+                    <h3>下注金額</h3>
+                    <div class="bet-controls">
+                        <input type="range" id="betSlider" min="100" max="50000" value="1000" step="100">
+                        <div class="bet-display">
+                            <span>$</span><input type="number" id="betAmount" value="1000" min="100" max="50000">
+                        </div>
+                        <div class="bet-buttons">
+                            <button data-bet-amount="100">$100</button>
+                            <button data-bet-amount="500">$500</button>
+                            <button data-bet-amount="1000">$1K</button>
+                            <button data-bet-amount="5000">$5K</button>
+                            <button data-bet-amount="10000">$10K</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="menu-buttons">
+                    <button class="btn-primary" id="joinGameBtn">加入遊戲</button>
+                    <button class="btn-secondary" id="leaderboardBtn">排行榜</button>
+                    <button class="btn-secondary" id="statisticsBtn">統計資料</button>
+                    <button class="btn-secondary" id="settingsBtn">設定</button>
+                </div>
+            </div>
+            
+            <button class="close-btn" id="closeBtn">&times;</button>
+        </div>
+    </div>
+    
+    <!-- 遊戲界面 -->
+    <div id="gameUI" class="screen" style="display: none;">
+        <!-- 遊戲畫布 -->
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- 遊戲HUD -->
+        <div class="game-hud">
+            <!-- 頂部狀態欄 -->
+            <div class="top-hud">
+                <div class="player-status">
+                    <div class="status-item">
+                        <span class="label">分數:</span>
+                        <span class="value" id="gameScore">0</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">金幣:</span>
+                        <span class="value" id="gameCoins">0</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">捕魚數:</span>
+                        <span class="value" id="fishCaught">0</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">時間:</span>
+                        <span class="value" id="gameTime">00:00</span>
+                    </div>
+                </div>
+                
+                <div class="room-info">
+                    <span id="roomName">房間名稱</span>
+                    <span id="playersCount">1/6 玩家</span>
+                </div>
+            </div>
+            
+            <!-- 武器和技能欄 -->
+            <div class="weapon-panel">
+                <div class="weapon-selection">
+                    <h3>武器</h3>
+                    <div class="weapons-grid" id="weaponsGrid">
+                        <!-- 動態生成武器列表 -->
+                    </div>
+                </div>
+                
+                <div class="skills-panel">
+                    <h3>技能</h3>
+                    <div class="skills-grid" id="skillsGrid">
+                        <!-- 動態生成技能列表 -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 其他玩家列表 -->
+            <div class="players-panel">
+                <h3>玩家列表</h3>
+                <div class="players-list" id="playersList">
+                    <!-- 動態生成玩家列表 -->
+                </div>
+            </div>
+            
+            <!-- 遊戲控制 -->
+            <div class="game-controls">
+                <button class="control-btn" onclick="pauseGame()" id="pauseBtn">暫停</button>
+                <button class="control-btn" onclick="leaveGame()">離開</button>
+                <button class="control-btn" onclick="toggleSettings()">設定</button>
+            </div>
+        </div>
+        
+        <!-- 準心 -->
+        <div id="crosshair"></div>
+    </div>
+    
+    <!-- 設定界面 -->
+    <div id="settingsModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>遊戲設定</h2>
+                <button class="close-modal" onclick="closeSettings()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-group">
+                    <h3>音效設定</h3>
+                    <div class="setting-item">
+                        <label for="masterVolume">主音量:</label>
+                        <input type="range" id="masterVolume" min="0" max="100" value="50">
+                        <span id="masterVolumeValue">50%</span>
+                    </div>
+                    <div class="setting-item">
+                        <label for="sfxVolume">音效音量:</label>
+                        <input type="range" id="sfxVolume" min="0" max="100" value="70">
+                        <span id="sfxVolumeValue">70%</span>
+                    </div>
+                    <div class="setting-item">
+                        <label for="musicVolume">背景音樂:</label>
+                        <input type="range" id="musicVolume" min="0" max="100" value="30">
+                        <span id="musicVolumeValue">30%</span>
+                    </div>
+                </div>
+                
+                <div class="settings-group">
+                    <h3>遊戲設定</h3>
+                    <div class="setting-item">
+                        <label for="autoAim">自動瞄準:</label>
+                        <input type="checkbox" id="autoAim">
+                    </div>
+                    <div class="setting-item">
+                        <label for="showFPS">顯示FPS:</label>
+                        <input type="checkbox" id="showFPS">
+                    </div>
+                    <div class="setting-item">
+                        <label for="particleQuality">特效品質:</label>
+                        <select id="particleQuality">
+                            <option value="low">低</option>
+                            <option value="medium" selected>中</option>
+                            <option value="high">高</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" onclick="saveSettings()">保存設定</button>
+                <button class="btn-secondary" onclick="resetSettings()">重置</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 排行榜界面 -->
+    <div id="leaderboardModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>排行榜</h2>
+                <button class="close-modal" onclick="closeLeaderboard()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="leaderboard-tabs">
+                    <button class="tab-btn active" onclick="showLeaderboardTab('daily')">今日</button>
+                    <button class="tab-btn" onclick="showLeaderboardTab('weekly')">本週</button>
+                    <button class="tab-btn" onclick="showLeaderboardTab('monthly')">本月</button>
+                    <button class="tab-btn" onclick="showLeaderboardTab('total')">總計</button>
+                </div>
+                <div class="leaderboard-content" id="leaderboardContent">
+                    <!-- 動態生成排行榜 -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 統計資料界面 -->
+    <div id="statisticsModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>統計資料</h2>
+                <button class="close-modal" onclick="closeStatistics()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="stats-grid" id="statsGrid">
+                    <!-- 動態生成統計資料 -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 遊戲結果界面 -->
+    <div id="gameResultModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>遊戲結果</h2>
+            </div>
+            <div class="modal-body">
+                <div class="result-summary" id="resultSummary">
+                    <!-- 動態生成遊戲結果 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" onclick="closeGameResult()">確定</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 等級提升動畫 -->
+    <div id="levelUpEffect" class="effect-overlay" style="display: none;">
+        <div class="level-up-content">
+            <h2>等級提升！</h2>
+            <div class="new-level">等級 <span id="newLevelNumber"></span></div>
+            <div class="level-rewards">
+                <p>新武器解鎖！</p>
+                <p>新技能解鎖！</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 捕魚特效 -->
+    <div id="fishCaughtEffect" class="effect-overlay" style="display: none;">
+        <div class="fish-caught-content">
+            <div class="fish-info">
+                <div class="fish-name" id="caughtFishName"></div>
+                <div class="fish-points" id="caughtFishPoints"></div>
+                <div class="fish-coins" id="caughtFishCoins"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 載入畫面 -->
+    <div id="loadingScreen" class="screen" style="display: none;">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">載入中...</div>
+        </div>
+    </div>
+    
+    <!-- 通知系統 -->
+    <div id="notificationContainer" class="notification-container"></div>
+    
+    <script src="script.js"></script>
+</body>
+</html> 

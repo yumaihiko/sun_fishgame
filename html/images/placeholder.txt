@@ -1,0 +1,44 @@
+# 圖片資源目錄
+
+請將以下圖片文件放在此目錄中：
+
+## 魚類圖片：
+- small_fish_1.png - 丑魚
+- small_fish_2.png - 熱帶魚  
+- small_fish_3.png - 小丑魚
+- medium_fish_1.png - 燈籠魚
+- medium_fish_2.png - 比目魚
+- medium_fish_3.png - 蝴蝶魚
+- large_fish_1.png - 石斑魚
+- large_fish_2.png - 金槍魚
+- large_fish_3.png - 劍魚
+- boss_fish_1.png - 金龍魚
+- boss_fish_2.png - 鯊魚
+- boss_fish_3.png - 龍王
+- special_bomb_fish.png - 炸彈魚
+- special_lightning_fish.png - 閃電魚
+
+## 武器圖片：
+- cannon_1.png - 小型砲
+- cannon_2.png - 中型砲
+- cannon_3.png - 大型砲
+- cannon_laser.png - 雷射砲
+
+## 技能圖片：
+- freeze_all.png - 冰凍全場
+- double_points.png - 雙倍積分
+- auto_aim.png - 自動瞄準
+
+## 背景圖片：
+- ocean_bg.jpg - 海洋背景
+- ui_bg.png - UI背景
+
+## 圖片格式要求：
+- 格式：PNG (透明背景) 或 JPG (背景圖)
+- 解析度：建議 256x256 像素
+- 文件大小：建議小於500KB
+
+## 注意事項：
+- 所有圖片文件都是可選的
+- 遊戲會使用CSS繪製的替代圖形
+- 確保圖片版權合法使用 
