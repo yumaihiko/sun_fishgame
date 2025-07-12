@@ -52,6 +52,35 @@ end
 
 -- 更新玩家數據
 function FishGame.UpdatePlayerData(identifier, data)
+    -- 確保 unlocked_weapons 和 unlocked_skills 不為空
+    local unlockedWeapons = data.unlocked_weapons or {'cannon_1'}
+    local unlockedSkills = data.unlocked_skills or {}
+    
+    -- 編碼為 JSON 字符串
+    local weaponsJson = json.encode(unlockedWeapons)
+    local skillsJson = json.encode(unlockedSkills)
+    
+    -- 檢查 JSON 字符串長度，如果太長則截斷
+    if string.len(weaponsJson) > 60000 then
+        print('^1[魚機遊戲] ^7警告：unlocked_weapons 資料過長，進行截斷')
+        -- 保留前幾個武器，避免資料過長
+        local safeWeapons = {}
+        for i = 1, math.min(#unlockedWeapons, 10) do
+            table.insert(safeWeapons, unlockedWeapons[i])
+        end
+        weaponsJson = json.encode(safeWeapons)
+    end
+    
+    if string.len(skillsJson) > 60000 then
+        print('^1[魚機遊戲] ^7警告：unlocked_skills 資料過長，進行截斷')
+        -- 保留前幾個技能，避免資料過長
+        local safeSkills = {}
+        for i = 1, math.min(#unlockedSkills, 10) do
+            table.insert(safeSkills, unlockedSkills[i])
+        end
+        skillsJson = json.encode(safeSkills)
+    end
+    
     MySQL.update('UPDATE fishgame_players SET level = ?, experience = ?, total_coins_earned = ?, total_games_played = ?, total_fish_caught = ?, best_score = ?, unlocked_weapons = ?, unlocked_skills = ?, updated_at = NOW() WHERE identifier = ?', {
         data.level or 1,
         data.experience or 0,
@@ -59,10 +88,16 @@ function FishGame.UpdatePlayerData(identifier, data)
         data.total_games_played or 0,
         data.total_fish_caught or 0,
         data.best_score or 0,
-        json.encode(data.unlocked_weapons or {'cannon_1'}),
-        json.encode(data.unlocked_skills or {}),
+        weaponsJson,
+        skillsJson,
         identifier
-    })
+    }, function(affectedRows)
+        if affectedRows and affectedRows > 0 then
+            print('^2[魚機遊戲] ^7玩家資料更新成功: ' .. identifier)
+        else
+            print('^1[魚機遊戲] ^7玩家資料更新失敗: ' .. identifier)
+        end
+    end)
 end
 
 -- 檢查玩家金錢

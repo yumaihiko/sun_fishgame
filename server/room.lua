@@ -191,10 +191,67 @@ function FishGame.EndSession(sessionId, reason)
         playerData.experience = (playerData.experience or 0) + expGained
         
         -- 等級計算
+        local oldLevel = playerData.level or 1
         local newLevel = math.floor(playerData.experience / 1000) + 1
-        if newLevel > playerData.level then
+        if newLevel > oldLevel then
             playerData.level = newLevel
+            
+            -- 檢查並解鎖新武器
+            local unlockedWeapons = json.decode(playerData.unlocked_weapons or '["cannon_1"]')
+            local newWeaponsUnlocked = false
+            
+            for weaponId, weaponData in pairs(Config.Weapons) do
+                if weaponData.unlockLevel and weaponData.unlockLevel <= newLevel then
+                    -- 檢查是否已經解鎖
+                    local alreadyUnlocked = false
+                    for _, unlockedWeapon in ipairs(unlockedWeapons) do
+                        if unlockedWeapon == weaponId then
+                            alreadyUnlocked = true
+                            break
+                        end
+                    end
+                    
+                    if not alreadyUnlocked then
+                        table.insert(unlockedWeapons, weaponId)
+                        newWeaponsUnlocked = true
+                        print('^2[魚機遊戲] ^7玩家 ' .. session.playerName .. ' 解鎖新武器: ' .. weaponData.name)
+                    end
+                end
+            end
+            
+            -- 檢查並解鎖新技能
+            local unlockedSkills = json.decode(playerData.unlocked_skills or '[]')
+            local newSkillsUnlocked = false
+            
+            for skillId, skillData in pairs(Config.SpecialSkills) do
+                if skillData.unlockLevel and skillData.unlockLevel <= newLevel then
+                    -- 檢查是否已經解鎖
+                    local alreadyUnlocked = false
+                    for _, unlockedSkill in ipairs(unlockedSkills) do
+                        if unlockedSkill == skillId then
+                            alreadyUnlocked = true
+                            break
+                        end
+                    end
+                    
+                    if not alreadyUnlocked then
+                        table.insert(unlockedSkills, skillId)
+                        newSkillsUnlocked = true
+                        print('^2[魚機遊戲] ^7玩家 ' .. session.playerName .. ' 解鎖新技能: ' .. skillData.name)
+                    end
+                end
+            end
+            
+            -- 更新解鎖的武器和技能
+            playerData.unlocked_weapons = json.encode(unlockedWeapons)
+            playerData.unlocked_skills = json.encode(unlockedSkills)
+            
             TriggerClientEvent('fishgame:levelUp', playerId, newLevel)
+            
+            -- 如果有新武器或技能解鎖，發送通知
+            if newWeaponsUnlocked or newSkillsUnlocked then
+                TriggerClientEvent('fishgame:showNotification', playerId, '恭喜！等級提升至 ' .. newLevel .. ' 級，解鎖了新內容！', 'success')
+            end
         end
         
         FishGame.UpdatePlayerData(session.identifier, playerData)
@@ -285,21 +342,20 @@ function FishGame.BroadcastToRoom(roomId, eventName, data, excludePlayerId)
     end
 end
 
--- 同步房間狀態
+-- 同步房間狀態（僅同步非位置數據）
 function FishGame.SyncRoomState(roomId)
     local players = FishGame.GetRoomPlayers(roomId)
     local roomData = FishGame.Rooms[roomId]
     
     if not roomData then return end
     
+    -- 只同步玩家列表和房間統計，不同步魚類位置
     for sessionId, session in pairs(FishGame.Sessions) do
         if session.roomId == roomId and session.status == 'active' then
             TriggerClientEvent('fishgame:roomStateUpdate', session.playerId, {
                 players = players,
-                fish = roomData.gameData.fish,
-                bullets = roomData.gameData.bullets,
-                effects = roomData.gameData.effects,
                 roomStats = roomData.stats
+                -- 移除 fish, bullets, effects 的同步，讓客戶端自行管理
             })
         end
     end

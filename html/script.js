@@ -76,6 +76,8 @@ let fps = 0;
 // 音效系統
 let audioContext = null;
 let sounds = {};
+let backgroundMusic = null;
+let bossMusic = null;
 
 // 輸入處理
 let mousePos = { x: 0, y: 0 };
@@ -121,25 +123,144 @@ function initializeAudio() {
     try {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         console.log('音效系統初始化成功');
+        
+        // 預載入聲音檔案
+        preloadSounds();
+        
+        // 初始化背景音樂
+        initializeBackgroundMusic();
+        
     } catch (e) {
         console.warn('音效系統初始化失敗:', e);
     }
 }
 
+// 預載入聲音檔案
+async function preloadSounds() {
+    const soundFiles = {
+        'shoot': 'cannon_fire.ogg',
+        'catch': 'fish_catch.ogg',
+        'hit': 'fish_hit.ogg',
+        'special': 'double_points.ogg',
+        'laser': 'laser_cannon.ogg',
+        'miss': 'shoot_miss.ogg',
+        'bigfish': 'fish_catch.ogg', // 使用相同的捕魚音效
+        'boss_death': 'fish_catch.ogg' // 暫時使用捕魚音效作為 BOSS 死亡音效
+    };
+    
+    for (const [soundName, fileName] of Object.entries(soundFiles)) {
+        try {
+            const response = await fetch(`sounds/${fileName}`);
+            if (!response.ok) {
+                console.warn(`無法載入聲音檔案: ${fileName}`);
+                continue;
+            }
+            
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            sounds[soundName] = audioBuffer;
+            console.log(`聲音檔案載入成功: ${soundName}`);
+        } catch (e) {
+            console.warn(`載入聲音檔案失敗 ${fileName}:`, e);
+        }
+    }
+}
+
+// 初始化背景音樂（但不自動播放）
+function initializeBackgroundMusic() {
+    try {
+        backgroundMusic = new Audio('sounds/background_music.ogg');
+        backgroundMusic.loop = true;
+        updateBackgroundMusicVolume();
+        
+        // 不自動播放，等待進入房間後再播放
+        console.log('背景音樂初始化成功（未播放）');
+    } catch (e) {
+        console.warn('背景音樂初始化失敗:', e);
+    }
+}
+
+// 更新背景音樂音量
+function updateBackgroundMusicVolume() {
+    if (backgroundMusic) {
+        backgroundMusic.volume = (gameState.settings.musicVolume / 100) * (gameState.settings.masterVolume / 100);
+    }
+    if (bossMusic) {
+        bossMusic.volume = (gameState.settings.musicVolume / 100) * (gameState.settings.masterVolume / 100);
+    }
+}
+
+// 啟動音頻上下文（需要用戶交互）
+function enableAudioContext() {
+    if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume().then(() => {
+            console.log('音頻上下文已啟動');
+        });
+    }
+    
+    // 不自動播放背景音樂，只有在遊戲中才播放
+}
+
+// 測試音效函數
+function testSound(soundName) {
+    console.log(`測試音效: ${soundName}`);
+    enableAudioContext(); // 確保音頻上下文已啟動
+    playSound(soundName, 0.8);
+}
+
+// 測試背景音樂
+function testBackgroundMusic() {
+    console.log('測試背景音樂');
+    enableAudioContext(); // 確保音頻上下文已啟動
+    
+    if (backgroundMusic) {
+        if (backgroundMusic.paused) {
+            backgroundMusic.play().catch(e => {
+                console.log('背景音樂播放失敗:', e);
+                showNotification('背景音樂播放失敗', 'error');
+            });
+            showNotification('背景音樂測試播放（僅用於測試）', 'success');
+            
+            // 測試播放3秒後自動停止
+            setTimeout(() => {
+                if (backgroundMusic && !backgroundMusic.paused && !gameState.inGame) {
+                    backgroundMusic.pause();
+                    showNotification('背景音樂測試結束', 'info');
+                }
+            }, 3000);
+        } else {
+            backgroundMusic.pause();
+            showNotification('背景音樂已暫停', 'info');
+        }
+    } else {
+        showNotification('背景音樂尚未初始化', 'warning');
+    }
+}
+
 // 播放音效
 function playSound(soundName, volume = 1.0) {
-    if (!audioContext || !sounds[soundName]) return;
+    if (!audioContext || !sounds[soundName]) {
+        console.warn(`無法播放音效: ${soundName} (audioContext: ${!!audioContext}, sounds: ${!!sounds[soundName]})`);
+        return;
+    }
     
     try {
+        // 確保音頻上下文已啟動
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+        
         const source = audioContext.createBufferSource();
         const gainNode = audioContext.createGain();
         
         source.buffer = sounds[soundName];
-        gainNode.gain.value = volume * (gameState.settings.sfxVolume / 100);
+        gainNode.gain.value = volume * (gameState.settings.sfxVolume / 100) * (gameState.settings.masterVolume / 100);
         
         source.connect(gainNode);
         gainNode.connect(audioContext.destination);
         source.start();
+        
+        console.log(`播放音效: ${soundName}`);
     } catch (e) {
         console.warn('播放音效失敗:', e);
     }
@@ -187,6 +308,16 @@ function setupSettingsEventListeners() {
             slider.addEventListener('input', function() {
                 valueSpan.textContent = this.value + '%';
                 gameState.settings[sliderId] = parseInt(this.value);
+                
+                // 即時更新音量
+                if (sliderId === 'masterVolume' || sliderId === 'musicVolume') {
+                    updateBackgroundMusicVolume();
+                }
+                
+                // 播放測試音效（僅限音效音量調整）
+                if (sliderId === 'sfxVolume' || sliderId === 'masterVolume') {
+                    playSound('shoot', 0.5);
+                }
             });
         }
     });
@@ -243,6 +374,9 @@ function findNearestFish() {
 
 // 滑鼠按下處理
 function handleMouseDown(e) {
+    // 啟動音頻上下文（需要用戶交互）
+    enableAudioContext();
+    
     if (e.button === 0 && gameState.inGame) { // 左鍵
         isMouseDown = true;
         handleShoot();
@@ -708,6 +842,14 @@ function showGameUI(data) {
         return;
     }
     
+    // 進入房間後開始播放背景音樂
+    if (backgroundMusic && backgroundMusic.paused) {
+        backgroundMusic.play().catch(e => {
+            console.log('背景音樂播放失敗:', e);
+        });
+        console.log('開始播放背景音樂');
+    }
+    
     console.log('Initializing game UI...');
     // 初始化遊戲UI
     initializeGameUI(data);
@@ -1167,6 +1309,11 @@ function drawFish() {
         } else if (fish.rarity === 'mythic') {
             ctx.shadowColor = 'rgba(255, 0, 255, 0.9)';
             ctx.shadowBlur = 25;
+        } else if (fish.rarity === 'boss') {
+            // BOSS魚特殊發光效果
+            ctx.shadowColor = fish.bossType === 'emperor' ? 
+                'rgba(255, 215, 0, 1.0)' : 'rgba(255, 0, 0, 0.8)';
+            ctx.shadowBlur = 30;
         }
         
         // 如果魚有圖片，使用圖片；否則使用emoji或形狀
@@ -1225,9 +1372,50 @@ function drawFish() {
         
         ctx.restore();
         
-        // 繪製血條（如果受傷）
-        if (fish.health < fish.maxHealth) {
+        // 如果是BOSS魚，添加額外視覺效果
+        if (fish.isBoss) {
+            ctx.save();
+            ctx.translate(fish.position.x, fish.position.y);
+            
+            // BOSS魚額外光環
+            ctx.beginPath();
+            ctx.strokeStyle = fish.bossType === 'emperor' ? 
+                'rgba(255, 215, 0, 0.6)' : 'rgba(255, 0, 0, 0.6)';
+            ctx.lineWidth = 3;
+            ctx.arc(0, 0, fish.size * 50 + 20, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // 旋轉光環
+            const time = Date.now() * 0.001;
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([10, 5]);
+            ctx.lineDashOffset = time * 20;
+            ctx.arc(0, 0, fish.size * 50 + 40, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // BOSS標記
+            ctx.fillStyle = 'rgba(255, 215, 0, 0.9)';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+            ctx.shadowBlur = 3;
+            ctx.fillText('👑', 0, -fish.size * 50 - 30);
+            
+            ctx.restore();
+        }
+        
+        // 繪製血條（如果受傷且需要顯示血量）
+        if (fish.health < fish.maxHealth && fish.showHealthBar !== false) {
             drawHealthBar(fish);
+            
+            // 如果是BOSS魚，更新BOSS血量條
+            if (fish.isBoss) {
+                updateBossHealthBar(fish.health, fish.maxHealth);
+            }
         }
         
         // 顯示大型魚的倍數
@@ -1821,6 +2009,12 @@ function hideGameUI() {
         animationFrame = null;
     }
     
+    // 離開遊戲時停止背景音樂
+    if (backgroundMusic && !backgroundMusic.paused) {
+        backgroundMusic.pause();
+        console.log('停止播放背景音樂');
+    }
+    
     document.getElementById('gameUI').style.display = 'none';
     document.getElementById('crosshair').style.display = 'none';
 }
@@ -1906,6 +2100,9 @@ function saveSettings() {
         }
     });
     
+    // 立即更新音量
+    updateBackgroundMusicVolume();
+    
     // 保存到本地存儲
     localStorage.setItem('fishgame_settings', JSON.stringify(gameState.settings));
     
@@ -1944,6 +2141,8 @@ function loadGameSettings() {
     if (saved) {
         try {
             gameState.settings = { ...gameState.settings, ...JSON.parse(saved) };
+            // 載入設定後立即應用音量
+            updateBackgroundMusicVolume();
         } catch (e) {
             console.warn('載入設定失敗:', e);
         }
@@ -2186,6 +2385,42 @@ window.addEventListener('message', function(event) {
         case 'statistics_updated':
             updateStatisticsContent(data.data);
             break;
+            
+        case 'missionStarted':
+            handleMissionStarted(data.data);
+            break;
+            
+        case 'bigFishSpawned':
+            handleBigFishSpawned(data.data);
+            break;
+            
+        case 'missionEnded':
+            handleMissionEnded(data.data);
+            break;
+            
+        case 'bossSpawned':
+            handleBossSpawned(data.data);
+            break;
+            
+        case 'bossDefeated':
+            handleBossDefeated(data.data);
+            break;
+            
+        case 'playBossMusic':
+            playBossMusic(data.data.musicFile);
+            break;
+            
+        case 'stopBossMusic':
+            stopBossMusic();
+            break;
+            
+        case 'playSound':
+            playSound(data.data.soundType);
+            break;
+            
+        case 'bossReward':
+            handleBossReward(data.data);
+            break;
     }
 });
 
@@ -2347,23 +2582,19 @@ function showLevelUpEffect(newLevel) {
     }, 3000);
 }
 
-// 更新房間狀態
+// 更新房間狀態（不覆蓋魚類位置數據）
 function updateRoomState(roomState) {
-    if (roomState.fish) {
-        gameState.gameData.fish = roomState.fish;
-    }
-    
-    if (roomState.bullets) {
-        gameState.gameData.bullets = roomState.bullets;
-    }
-    
-    if (roomState.effects) {
-        gameState.gameData.effects = roomState.effects;
-    }
+    // 不再同步魚類、子彈、特效數據，讓客戶端完全控制
+    // 這樣可以避免服務器覆蓋客戶端的魚類位置，消除位置跳躍問題
     
     // 更新玩家列表
     if (roomState.players) {
         updatePlayersList(roomState.players);
+    }
+    
+    // 更新房間統計
+    if (roomState.roomStats) {
+        updateRoomStats(roomState.roomStats);
     }
 }
 
@@ -3343,4 +3574,313 @@ function updateStatisticsContent(statistics) {
     }
     
     statsGrid.innerHTML = html;
+}
+
+// 處理任務開始
+function handleMissionStarted(data) {
+    console.log('任務開始:', data);
+    
+    // 顯示任務通知
+    showMissionNotification(data.description, 'mission-start');
+    
+    // 顯示任務UI
+    showMissionUI(data);
+}
+
+// 處理大魚生成
+function handleBigFishSpawned(data) {
+    console.log('大魚出現:', data);
+    
+    // 顯示大魚出現通知
+    showMissionNotification(data.message, 'big-fish');
+    
+    // 播放特殊音效
+    playSound('bigfish');
+}
+
+// 處理任務結束
+function handleMissionEnded(data) {
+    console.log('任務結束:', data);
+    
+    // 顯示任務結果
+    showMissionNotification(data.message, data.success ? 'mission-success' : 'mission-fail');
+    
+    // 隱藏任務UI
+    hideMissionUI();
+}
+
+// 顯示任務通知
+function showMissionNotification(message, type) {
+    const notification = document.createElement('div');
+    notification.className = `mission-notification ${type}`;
+    notification.innerHTML = `
+        <div class="mission-content">
+            <div class="mission-icon">🎯</div>
+            <div class="mission-text">${message}</div>
+        </div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // 3秒後自動消失
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 3000);
+}
+
+// 顯示任務UI
+function showMissionUI(missionData) {
+    let missionUI = document.getElementById('missionUI');
+    if (!missionUI) {
+        missionUI = document.createElement('div');
+        missionUI.id = 'missionUI';
+        missionUI.className = 'mission-ui';
+        document.body.appendChild(missionUI);
+    }
+    
+    const participantsList = Object.values(missionData.participants)
+        .map(p => `<div class="participant">${p.playerName}</div>`)
+        .join('');
+    
+    missionUI.innerHTML = `
+        <div class="mission-header">
+            <h3>🎯 任務進行中</h3>
+            <div class="mission-timer" id="missionTimer">${missionData.duration}秒</div>
+        </div>
+        <div class="mission-description">${missionData.description}</div>
+        <div class="mission-participants">
+            <h4>參與者:</h4>
+            ${participantsList}
+        </div>
+    `;
+    
+    missionUI.style.display = 'block';
+    
+    // 開始倒計時
+    startMissionTimer(missionData.duration);
+}
+
+// 隱藏任務UI
+function hideMissionUI() {
+    const missionUI = document.getElementById('missionUI');
+    if (missionUI) {
+        missionUI.style.display = 'none';
+    }
+}
+
+// 任務倒計時
+function startMissionTimer(duration) {
+    let timeLeft = duration;
+    const timerElement = document.getElementById('missionTimer');
+    
+    const timer = setInterval(() => {
+        timeLeft--;
+        if (timerElement) {
+            timerElement.textContent = timeLeft + '秒';
+        }
+        
+        if (timeLeft <= 0) {
+            clearInterval(timer);
+        }
+    }, 1000);
+}
+
+// 處理BOSS魚出現
+function handleBossSpawned(data) {
+    console.log('BOSS魚出現:', data);
+    
+    // 顯示BOSS出現通知
+    showBossNotification(data.message, 'boss-spawn');
+    
+    // 顯示BOSS血量條
+    showBossHealthBar(data.bossName, data.bossHealth, data.bossHealth);
+    
+    // 螢幕震動效果
+    createScreenShake();
+}
+
+// 處理BOSS魚被擊敗
+function handleBossDefeated(data) {
+    console.log('BOSS魚被擊敗:', data);
+    
+    // 顯示勝利通知
+    showBossNotification(data.message, 'boss-defeat');
+    
+    // 隱藏BOSS血量條
+    hideBossHealthBar();
+    
+    // 勝利特效
+    createVictoryEffect();
+}
+
+// 處理BOSS獎勵
+function handleBossReward(data) {
+    console.log('BOSS獎勵:', data);
+    
+    // 顯示獎勵通知
+    showBossNotification(data.message, 'boss-reward');
+}
+
+// 顯示BOSS通知
+function showBossNotification(message, type) {
+    const notification = document.createElement('div');
+    notification.className = `boss-notification ${type}`;
+    notification.innerHTML = `
+        <div class="boss-content">
+            <div class="boss-icon">${type === 'boss-spawn' ? '🐲' : type === 'boss-defeat' ? '🏆' : '💰'}</div>
+            <div class="boss-text">${message}</div>
+        </div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // 5秒後自動消失
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 5000);
+}
+
+// 顯示BOSS血量條
+function showBossHealthBar(bossName, currentHealth, maxHealth) {
+    let bossHealthUI = document.getElementById('bossHealthUI');
+    if (!bossHealthUI) {
+        bossHealthUI = document.createElement('div');
+        bossHealthUI.id = 'bossHealthUI';
+        bossHealthUI.className = 'boss-health-ui';
+        document.body.appendChild(bossHealthUI);
+    }
+    
+    const healthPercent = (currentHealth / maxHealth) * 100;
+    
+    bossHealthUI.innerHTML = `
+        <div class="boss-health-header">
+            <h3>👑 ${bossName}</h3>
+            <div class="boss-health-text">${currentHealth} / ${maxHealth}</div>
+        </div>
+        <div class="boss-health-bar">
+            <div class="boss-health-fill" style="width: ${healthPercent}%"></div>
+        </div>
+    `;
+    
+    bossHealthUI.style.display = 'block';
+}
+
+// 隱藏BOSS血量條
+function hideBossHealthBar() {
+    const bossHealthUI = document.getElementById('bossHealthUI');
+    if (bossHealthUI) {
+        bossHealthUI.style.display = 'none';
+    }
+}
+
+// 更新BOSS血量條
+function updateBossHealthBar(currentHealth, maxHealth) {
+    const bossHealthUI = document.getElementById('bossHealthUI');
+    if (bossHealthUI) {
+        const healthPercent = (currentHealth / maxHealth) * 100;
+        const healthFill = bossHealthUI.querySelector('.boss-health-fill');
+        const healthText = bossHealthUI.querySelector('.boss-health-text');
+        
+        if (healthFill) {
+            healthFill.style.width = healthPercent + '%';
+        }
+        if (healthText) {
+            healthText.textContent = `${currentHealth} / ${maxHealth}`;
+        }
+    }
+}
+
+// 播放BOSS音樂
+function playBossMusic(musicFile) {
+    // 停止背景音樂
+    if (backgroundMusic) {
+        backgroundMusic.pause();
+    }
+    
+    // 播放BOSS音樂
+    try {
+        bossMusic = new Audio();
+        bossMusic.loop = true;
+        
+        // 檢查 BOSS 音樂檔案是否存在，如果不存在則使用背景音樂
+        const bossAudioPath = `sounds/${musicFile}`;
+        
+        fetch(bossAudioPath, { method: 'HEAD' })
+            .then(response => {
+                if (response.ok) {
+                    bossMusic.src = bossAudioPath;
+                    console.log(`播放BOSS音樂: ${musicFile}`);
+                } else {
+                    // 使用背景音樂作為替代
+                    bossMusic.src = 'sounds/background_music.ogg';
+                    console.log(`BOSS音樂檔案不存在，使用背景音樂: ${musicFile}`);
+                }
+                updateBackgroundMusicVolume(); // 設定正確音量
+                bossMusic.play().catch(e => console.log('Boss music play failed:', e));
+            })
+            .catch(e => {
+                // 如果檢查失敗，直接使用背景音樂
+                bossMusic.src = 'sounds/background_music.ogg';
+                updateBackgroundMusicVolume();
+                bossMusic.play().catch(e => console.log('Boss music play failed:', e));
+                console.warn('Boss music file check failed, using background music:', e);
+            });
+            
+    } catch (e) {
+        console.warn('Boss music initialization failed:', e);
+    }
+}
+
+// 停止BOSS音樂
+function stopBossMusic() {
+    if (bossMusic) {
+        bossMusic.pause();
+        bossMusic.currentTime = 0;
+    }
+    
+    // 恢復背景音樂
+    if (backgroundMusic) {
+        backgroundMusic.play().catch(e => console.log('Background music resume failed:', e));
+    }
+}
+
+// 螢幕震動效果
+function createScreenShake() {
+    const gameCanvas = document.getElementById('gameCanvas');
+    if (gameCanvas) {
+        gameCanvas.style.animation = 'screenShake 0.5s ease-in-out';
+        setTimeout(() => {
+            gameCanvas.style.animation = '';
+        }, 500);
+    }
+}
+
+// 勝利特效
+function createVictoryEffect() {
+    // 創建煙火特效
+    for (let i = 0; i < 10; i++) {
+        setTimeout(() => {
+            createFirework();
+        }, i * 200);
+    }
+}
+
+// 煙火特效
+function createFirework() {
+    const firework = document.createElement('div');
+    firework.className = 'firework';
+    firework.style.left = Math.random() * window.innerWidth + 'px';
+    firework.style.top = Math.random() * window.innerHeight + 'px';
+    
+    document.body.appendChild(firework);
+    
+    setTimeout(() => {
+        if (firework.parentNode) {
+            firework.parentNode.removeChild(firework);
+        }
+    }, 2000);
 }

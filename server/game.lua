@@ -15,13 +15,13 @@ function FishGame.SpawnFish(roomId)
     
     local currentTime = os.time()
     
-    -- 控制生成頻率（每2秒最多生成一次）
-    if currentTime - roomData.gameData.lastFishSpawn < 2 then
+    -- 控制生成頻率（每3秒最多生成一次）
+    if currentTime - roomData.gameData.lastFishSpawn < 3 then
         return
     end
     
     local fishSpawned = 0
-    local maxFishInRoom = 30  -- 房間最大魚數量（增加以容納群體魚）
+    local maxFishInRoom = 20  -- 降低房間最大魚數量，避免過多魚類
     local currentFishCount = 0
     
     -- 計算當前魚數量
@@ -34,88 +34,132 @@ function FishGame.SpawnFish(roomId)
         return
     end
     
-    -- 根據機率生成不同魚類
+    -- 初始化房間任務系統
+    if not roomData.gameData.missionSystem then
+        roomData.gameData.missionSystem = {
+            totalKills = 0,
+            playerKills = {},
+            lastMissionTime = 0,
+            activeMission = nil
+        }
+    end
+    
+    -- 檢查是否觸發任務
+    FishGame.CheckMissionTrigger(roomId)
+    
+    -- 新的魚類生成邏輯 - 基於稀有度控制
+    local fishToSpawn = {}
+    local usedPositions = {}
+    
+    -- 獲取所有可用的魚類類型並按稀有度分類
+    local commonFish = {}
+    local rareFish = {}
+    
     for fishType, fishData in pairs(Config.FishTypes) do
-        local spawnRoll = math.random() * 100
-        if spawnRoll <= fishData.spawnChance and fishSpawned < 5 then -- 每次最多生成5條魚
-            
-            -- 如果是群體魚，生成多條
-            local spawnCount = 1
-            if fishData.schoolSize then
-                spawnCount = math.random(fishData.schoolSize.min, fishData.schoolSize.max)
+        if fishData.points >= 100 then
+            -- 100分以上的魚為稀有魚
+            table.insert(rareFish, {type = fishType, data = fishData})
+        else
+            -- 100分以下的魚為普通魚
+            table.insert(commonFish, {type = fishType, data = fishData})
+        end
+    end
+    
+    -- 決定生成魚的數量（1-3條）
+    local spawnCount = math.random(1, 3)
+    
+    for i = 1, spawnCount do
+        if currentFishCount + fishSpawned >= maxFishInRoom then
+            break
+        end
+        
+        local selectedFish = nil
+        
+        -- 稀有魚生成機率控制
+        local rareChance = math.random() * 100
+        if #rareFish > 0 and rareChance <= 5 then -- 5%機率生成稀有魚
+            selectedFish = rareFish[math.random(#rareFish)]
+        else
+            -- 生成普通魚
+            if #commonFish > 0 then
+                selectedFish = commonFish[math.random(#commonFish)]
             end
-            
-            -- 群體魚的中心位置
-            local schoolCenterX = math.random(-1920, 1920)
-            local schoolCenterY = math.random(-1080, 1080)
-            local schoolVelocityX = (math.random() - 0.5) * fishData.speed
-            local schoolVelocityY = (math.random() - 0.5) * fishData.speed
-            
-            for i = 1, spawnCount do
-                if currentFishCount + fishSpawned >= maxFishInRoom then
-                    break
-                end
+        end
+        
+        if selectedFish then
+            -- 生成魚類位置，避免重複
+            local position = FishGame.GenerateUniquePosition(usedPositions)
+            if position then
+                table.insert(usedPositions, position)
                 
+                -- 創建魚類
                 roomData.gameData.fishIdCounter = roomData.gameData.fishIdCounter + 1
                 local fishId = 'fish_' .. roomId .. '_' .. roomData.gameData.fishIdCounter
                 
-                -- 群體魚的位置偏移
-                local offsetX = 0
-                local offsetY = 0
-                if fishData.schoolSize and i > 1 then
-                    offsetX = math.random(-50, 50)
-                    offsetY = math.random(-50, 50)
+                -- 調整血量 - 高級魚血量更多
+                local adjustedHealth = selectedFish.data.health
+                if selectedFish.data.points >= 100 then
+                    adjustedHealth = adjustedHealth * 3 -- 高級魚血量增加3倍
+                elseif selectedFish.data.points >= 50 then
+                    adjustedHealth = adjustedHealth * 2 -- 中級魚血量增加2倍
                 end
                 
-                -- 決定起始位置（如果可以離開螢幕，則可能從螢幕外開始）
-                local startX = schoolCenterX + offsetX
-                local startY = schoolCenterY + offsetY
-                if fishData.canLeaveScreen and math.random() < 0.3 then
-                    -- 30%機率從螢幕外開始
-                    if math.random() < 0.5 then
-                        startX = math.random() < 0.5 and -2200 or 2200
-                        startY = math.random(-1080, 1080)
-                    else
-                        startX = math.random(-1920, 1920)
-                        startY = math.random() < 0.5 and -1300 or 1300
+                -- BOSS魚特殊處理
+                if selectedFish.data.isBoss then
+                    -- BOSS魚使用原始血量（已經設定為很高）
+                    adjustedHealth = selectedFish.data.health
+                    
+                    -- 廣播BOSS出現通知
+                    FishGame.BroadcastToRoom(roomId, 'fishgame:bossSpawned', {
+                        bossName = selectedFish.data.name,
+                        bossType = selectedFish.data.bossType,
+                        bossHealth = adjustedHealth,
+                        bossPoints = selectedFish.data.points,
+                        message = '🐲 王級魚 ' .. selectedFish.data.name .. ' 出現了！準備迎戰！'
+                    })
+                    
+                    -- 播放BOSS音樂
+                    if selectedFish.data.bossMusic then
+                        FishGame.BroadcastToRoom(roomId, 'fishgame:playBossMusic', {
+                            musicFile = selectedFish.data.bossMusic
+                        })
                     end
                 end
                 
                 local fish = {
                     id = fishId,
-                    type = fishType,
-                    name = fishData.name,
-                    points = fishData.points,
-                    health = fishData.health,
-                    maxHealth = fishData.health,
-                    speed = fishData.speed,
-                    size = fishData.size,
-                    color = fishData.color,
-                    rarity = fishData.rarity,
-                    specialEffect = fishData.specialEffect,
-                    image = fishData.image,
-                    canLeaveScreen = fishData.canLeaveScreen,
-                    position = {
-                        x = startX,
-                        y = startY,
-                        z = 0
-                    },
+                    type = selectedFish.type,
+                    name = selectedFish.data.name,
+                    points = selectedFish.data.points,
+                    health = adjustedHealth,
+                    maxHealth = adjustedHealth,
+                    speed = selectedFish.data.speed,
+                    size = selectedFish.data.size,
+                    color = selectedFish.data.color,
+                    rarity = selectedFish.data.rarity,
+                    specialEffect = selectedFish.data.specialEffect,
+                    image = selectedFish.data.image,
+                    canLeaveScreen = selectedFish.data.canLeaveScreen,
+                    showHealthBar = selectedFish.data.showHealthBar ~= false, -- BOSS魚默認顯示血量
+                    isBoss = selectedFish.data.isBoss,
+                    bossType = selectedFish.data.bossType,
+                    position = position,
                     velocity = {
-                        x = schoolVelocityX + (math.random() - 0.5) * 0.5, -- 小幅隨機偏移
-                        y = schoolVelocityY + (math.random() - 0.5) * 0.5,
+                        x = (math.random() - 0.5) * selectedFish.data.speed,
+                        y = (math.random() - 0.5) * selectedFish.data.speed,
                         z = 0
                     },
                     rotation = math.random() * 360,
                     spawnTime = currentTime,
                     alive = true,
-                    damageByPlayer = {},  -- 追蹤每個玩家對此魚造成的傷害
-                    schoolId = fishData.schoolSize and ('school_' .. roomId .. '_' .. currentTime .. '_' .. fishType) or nil
+                    damageByPlayer = {},
+                    schoolId = nil
                 }
                 
                 -- 如果是大型魚，初始化倍數系統
-                if fishData.multiplierSystem then
+                if selectedFish.data.multiplierSystem then
                     fish.multiplierData = {
-                        currentMultiplier = fishData.multiplierSystem.baseMultiplier,
+                        currentMultiplier = selectedFish.data.multiplierSystem.baseMultiplier,
                         hitCount = 0,
                         lastHitTime = 0
                     }
@@ -139,7 +183,236 @@ function FishGame.SpawnFish(roomId)
     end
 end
 
--- 更新魚類位置
+-- 生成唯一位置，避免重複
+function FishGame.GenerateUniquePosition(usedPositions)
+    local maxAttempts = 20
+    local minDistance = 150 -- 最小距離
+    
+    for attempt = 1, maxAttempts do
+        local position = {
+            x = math.random(-1800, 1800),
+            y = math.random(-900, 900),
+            z = 0
+        }
+        
+        local isUnique = true
+        for _, usedPos in ipairs(usedPositions) do
+            local distance = math.sqrt(
+                (position.x - usedPos.x)^2 + (position.y - usedPos.y)^2
+            )
+            if distance < minDistance then
+                isUnique = false
+                break
+            end
+        end
+        
+        if isUnique then
+            return position
+        end
+    end
+    
+    -- 如果找不到唯一位置，返回隨機位置
+    return {
+        x = math.random(-1800, 1800),
+        y = math.random(-900, 900),
+        z = 0
+    }
+end
+
+-- 檢查任務觸發
+function FishGame.CheckMissionTrigger(roomId)
+    local roomData = FishGame.Rooms[roomId]
+    if not roomData or not roomData.gameData.missionSystem then return end
+    
+    local missionSystem = roomData.gameData.missionSystem
+    local currentTime = os.time()
+    
+    -- 檢查是否有活躍任務
+    if missionSystem.activeMission then
+        return
+    end
+    
+    -- 檢查是否有玩家達到5次擊殺
+    local readyPlayers = {}
+    for sessionId, kills in pairs(missionSystem.playerKills) do
+        if kills >= 5 then
+            local session = FishGame.Sessions[sessionId]
+            if session and session.status == 'active' then
+                table.insert(readyPlayers, session)
+            end
+        end
+    end
+    
+    -- 如果有玩家準備好，且距離上次任務超過30秒
+    if #readyPlayers > 0 and (currentTime - missionSystem.lastMissionTime) > 30 then
+        -- 20%機率觸發任務
+        if math.random() * 100 <= 20 then
+            FishGame.TriggerBigFishMission(roomId, readyPlayers)
+        end
+    end
+end
+
+-- 觸發大魚任務
+function FishGame.TriggerBigFishMission(roomId, readyPlayers)
+    local roomData = FishGame.Rooms[roomId]
+    if not roomData then return end
+    
+    local missionSystem = roomData.gameData.missionSystem
+    
+    -- 創建任務
+    missionSystem.activeMission = {
+        type = 'big_fish_summon',
+        startTime = os.time(),
+        duration = 60, -- 60秒任務時間
+        participants = {},
+        bigFishSpawned = false
+    }
+    
+    -- 添加參與者
+    for _, session in ipairs(readyPlayers) do
+        missionSystem.activeMission.participants[session.id] = {
+            sessionId = session.id,
+            playerName = session.playerName,
+            contributed = false
+        }
+        -- 重置玩家擊殺數
+        missionSystem.playerKills[session.id] = 0
+    end
+    
+    -- 廣播任務開始
+    FishGame.BroadcastToRoom(roomId, 'fishgame:missionStarted', {
+        missionType = 'big_fish_summon',
+        duration = 60,
+        participants = missionSystem.activeMission.participants,
+        description = '大魚召喚任務開始！所有參與者需要在60秒內合力召喚大魚！'
+    })
+    
+    -- 10秒後生成大魚
+    Citizen.SetTimeout(10000, function()
+        if missionSystem.activeMission then
+            FishGame.SpawnBigFish(roomId)
+        end
+    end)
+    
+    -- 60秒後結束任務
+    Citizen.SetTimeout(60000, function()
+        FishGame.EndMission(roomId)
+    end)
+    
+    missionSystem.lastMissionTime = os.time()
+end
+
+-- 生成大魚
+function FishGame.SpawnBigFish(roomId)
+    local roomData = FishGame.Rooms[roomId]
+    if not roomData or not roomData.gameData.missionSystem.activeMission then return end
+    
+    -- 選擇一個高級魚類
+    local bigFishTypes = {}
+    for fishType, fishData in pairs(Config.FishTypes) do
+        if fishData.points >= 500 then -- 500分以上的魚作為大魚
+            table.insert(bigFishTypes, {type = fishType, data = fishData})
+        end
+    end
+    
+    if #bigFishTypes == 0 then return end
+    
+    local selectedBigFish = bigFishTypes[math.random(#bigFishTypes)]
+    
+    -- 生成大魚
+    roomData.gameData.fishIdCounter = roomData.gameData.fishIdCounter + 1
+    local fishId = 'big_fish_' .. roomId .. '_' .. roomData.gameData.fishIdCounter
+    
+    local fish = {
+        id = fishId,
+        type = selectedBigFish.type,
+        name = selectedBigFish.data.name .. ' (任務大魚)',
+        points = selectedBigFish.data.points * 2, -- 雙倍分數
+        health = selectedBigFish.data.health * 5, -- 5倍血量
+        maxHealth = selectedBigFish.data.health * 5,
+        speed = selectedBigFish.data.speed * 0.5, -- 較慢速度
+        size = selectedBigFish.data.size * 1.5, -- 較大尺寸
+        color = selectedBigFish.data.color,
+        rarity = 'mission',
+        specialEffect = selectedBigFish.data.specialEffect,
+        image = selectedBigFish.data.image,
+        canLeaveScreen = false,
+        showHealthBar = true, -- 任務大魚顯示血量
+        isMissionFish = true,
+        position = {
+            x = 0, -- 螢幕中央
+            y = 0,
+            z = 0
+        },
+        velocity = {
+            x = (math.random() - 0.5) * selectedBigFish.data.speed * 0.5,
+            y = (math.random() - 0.5) * selectedBigFish.data.speed * 0.5,
+            z = 0
+        },
+        rotation = math.random() * 360,
+        spawnTime = os.time(),
+        alive = true,
+        damageByPlayer = {},
+        schoolId = nil
+    }
+    
+    -- 初始化倍數系統
+    if selectedBigFish.data.multiplierSystem then
+        fish.multiplierData = {
+            currentMultiplier = selectedBigFish.data.multiplierSystem.baseMultiplier * 2,
+            hitCount = 0,
+            lastHitTime = 0
+        }
+    end
+    
+    roomData.gameData.fish[fishId] = fish
+    roomData.gameData.missionSystem.activeMission.bigFishSpawned = true
+    
+    -- 廣播大魚出現
+    FishGame.BroadcastToRoom(roomId, 'fishgame:bigFishSpawned', {
+        fishId = fishId,
+        fishName = fish.name,
+        fishPoints = fish.points,
+        message = '任務大魚出現了！快來攻擊獲得豐厚獎勵！'
+    })
+end
+
+-- 結束任務
+function FishGame.EndMission(roomId)
+    local roomData = FishGame.Rooms[roomId]
+    if not roomData or not roomData.gameData.missionSystem.activeMission then return end
+    
+    local mission = roomData.gameData.missionSystem.activeMission
+    
+    -- 廣播任務結束
+    FishGame.BroadcastToRoom(roomId, 'fishgame:missionEnded', {
+        missionType = mission.type,
+        success = mission.bigFishSpawned,
+        message = mission.bigFishSpawned and '任務完成！' or '任務失敗！'
+    })
+    
+    -- 清除任務
+    roomData.gameData.missionSystem.activeMission = nil
+end
+
+-- 記錄玩家擊殺（在魚死亡時調用）
+function FishGame.RecordPlayerKill(roomId, sessionId)
+    local roomData = FishGame.Rooms[roomId]
+    if not roomData or not roomData.gameData.missionSystem then return end
+    
+    local missionSystem = roomData.gameData.missionSystem
+    
+    -- 記錄玩家擊殺
+    if not missionSystem.playerKills[sessionId] then
+        missionSystem.playerKills[sessionId] = 0
+    end
+    missionSystem.playerKills[sessionId] = missionSystem.playerKills[sessionId] + 1
+    
+    -- 增加總擊殺數
+    missionSystem.totalKills = missionSystem.totalKills + 1
+end
+
+-- 更新魚類狀態（不更新位置，位置由客戶端控制）
 function FishGame.UpdateFish(roomId)
     local roomData = FishGame.Rooms[roomId]
     if not roomData then return end
@@ -149,91 +422,7 @@ function FishGame.UpdateFish(roomId)
     
     for fishId, fish in pairs(roomData.gameData.fish) do
         if fish.alive then
-            -- 更新位置
-            fish.position.x = fish.position.x + fish.velocity.x
-            fish.position.y = fish.position.y + fish.velocity.y
-            
-            -- 更新旋轉角度（面向移動方向）
-            if fish.velocity.x ~= 0 or fish.velocity.y ~= 0 then
-                fish.rotation = math.atan2(fish.velocity.y, fish.velocity.x) * 180 / math.pi
-            end
-            
-            -- 邊界檢查
-            if fish.canLeaveScreen then
-                -- 可以游出螢幕的魚
-                if fish.position.x > 2500 or fish.position.x < -2500 or
-                   fish.position.y > 1500 or fish.position.y < -1500 then
-                    -- 從另一邊返回
-                    if math.random() < 0.5 then
-                        if fish.position.x > 2500 then
-                            fish.position.x = -2500
-                        elseif fish.position.x < -2500 then
-                            fish.position.x = 2500
-                        end
-                        if fish.position.y > 1500 then
-                            fish.position.y = -1500
-                        elseif fish.position.y < -1500 then
-                            fish.position.y = 1500
-                        end
-                    else
-                        -- 改變方向游回來
-                        if fish.position.x > 2500 or fish.position.x < -2500 then
-                            fish.velocity.x = -fish.velocity.x
-                        end
-                        if fish.position.y > 1500 or fish.position.y < -1500 then
-                            fish.velocity.y = -fish.velocity.y
-                        end
-                    end
-                end
-            else
-                -- 不能游出螢幕的魚，在邊界反彈
-                if fish.position.x > 1920 or fish.position.x < -1920 then
-                    fish.velocity.x = -fish.velocity.x
-                    fish.position.x = math.max(-1920, math.min(1920, fish.position.x))
-                end
-                
-                if fish.position.y > 1080 or fish.position.y < -1080 then
-                    fish.velocity.y = -fish.velocity.y
-                    fish.position.y = math.max(-1080, math.min(1080, fish.position.y))
-                end
-            end
-            
-            -- 隨機改變方向
-            if math.random() < 0.02 then -- 2%機率改變方向
-                local fishConfig = Config.FishTypes[fish.type]
-                if fishConfig then
-                    fish.velocity.x = (math.random() - 0.5) * fishConfig.speed
-                    fish.velocity.y = (math.random() - 0.5) * fishConfig.speed
-                end
-            end
-            
-            -- 群體魚行為（跟隨附近的同類）
-            if fish.schoolId then
-                local nearbyFish = 0
-                local avgVelX = 0
-                local avgVelY = 0
-                for otherId, otherFish in pairs(roomData.gameData.fish) do
-                    if otherFish.schoolId == fish.schoolId and otherId ~= fishId then
-                        local distance = math.sqrt(
-                            (fish.position.x - otherFish.position.x) ^ 2 +
-                            (fish.position.y - otherFish.position.y) ^ 2
-                        )
-                        if distance < 200 then
-                            nearbyFish = nearbyFish + 1
-                            avgVelX = avgVelX + otherFish.velocity.x
-                            avgVelY = avgVelY + otherFish.velocity.y
-                        end
-                    end
-                end
-                if nearbyFish > 0 then
-                    avgVelX = avgVelX / nearbyFish
-                    avgVelY = avgVelY / nearbyFish
-                    fish.velocity.x = fish.velocity.x * 0.8 + avgVelX * 0.2
-                    fish.velocity.y = fish.velocity.y * 0.8 + avgVelY * 0.2
-                end
-            end
-            
-            -- 清理過期魚類
+            -- 只清理過期魚類，不更新位置
             if currentTime - fish.spawnTime > 1800 then -- 30分鐘後消失
                 table.insert(fishToRemove, fishId)
             end
@@ -488,11 +677,15 @@ function FishGame.ProcessFishHit(roomId, sessionId, fishId, fish, bullet)
         damage = damage,
         remainingHealth = fish.health,
         maxHealth = fish.maxHealth,
+        showHealthBar = fish.showHealthBar, -- 添加血量顯示控制
         weaponType = bullet.weaponType,
         weaponMultiplier = weapon.multiplier
     })
     
     if fish.health <= 0 then
+        -- 魚死亡，記錄擊殺
+        FishGame.RecordPlayerKill(roomId, sessionId)
+        
         -- 魚死亡，計算獎勵分配
         fish.alive = false
         
@@ -638,6 +831,41 @@ function FishGame.ProcessFishHit(roomId, sessionId, fishId, fish, bullet)
             local contributorSession = FishGame.Sessions[contributorSessionId]
             if contributorSession and contributorSession.damageDealt[fishId] then
                 contributorSession.damageDealt[fishId] = nil
+            end
+        end
+
+        -- 如果是BOSS魚死亡，特殊處理
+        if fish.isBoss then
+            -- 停止BOSS音樂
+            FishGame.BroadcastToRoom(roomId, 'fishgame:stopBossMusic', {})
+            
+            -- 播放BOSS死亡音效
+            FishGame.BroadcastToRoom(roomId, 'fishgame:playSound', {
+                soundType = 'boss_death'
+            })
+            
+            -- 廣播BOSS死亡通知
+            FishGame.BroadcastToRoom(roomId, 'fishgame:bossDefeated', {
+                bossName = fish.name,
+                defeatedBy = session.playerName,
+                totalDamage = totalDamage,
+                finalMultiplier = fish.multiplierData and fish.multiplierData.currentMultiplier or 1,
+                message = '🏆 王級魚 ' .. fish.name .. ' 被 ' .. session.playerName .. ' 擊敗了！'
+            })
+            
+            -- BOSS魚額外獎勵
+            for rewardSessionId, rewardData in pairs(allRewards) do
+                local rewardSession = rewardData.session
+                -- BOSS魚額外獎勵50%
+                local bossBonus = math.floor(rewardData.coins * 0.5)
+                rewardSession.currentCoins = rewardSession.currentCoins + bossBonus
+                
+                -- 通知BOSS獎勵
+                TriggerClientEvent('fishgame:bossReward', rewardSession.playerId, {
+                    bossName = fish.name,
+                    bonusCoins = bossBonus,
+                    message = '🏆 王級魚獎勵：+' .. bossBonus .. ' 金幣！'
+                })
             end
         end
     end

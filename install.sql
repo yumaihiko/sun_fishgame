@@ -11,9 +11,9 @@ CREATE TABLE IF NOT EXISTS `fishgame_players` (
     `total_games_played` int(11) DEFAULT 0,
     `total_fish_caught` int(11) DEFAULT 0,
     `best_score` int(11) DEFAULT 0,
-    `unlocked_weapons` text DEFAULT NULL,
-    `unlocked_skills` text DEFAULT NULL,
-    `settings` text DEFAULT NULL,
+    `unlocked_weapons` LONGTEXT DEFAULT NULL,
+    `unlocked_skills` LONGTEXT DEFAULT NULL,
+    `settings` LONGTEXT DEFAULT NULL,
     `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS `fishgame_rooms` (
     `min_bet` int(11) DEFAULT 100,
     `max_bet` int(11) DEFAULT 5000,
     `status` enum('active','inactive','maintenance') DEFAULT 'active',
-    `settings` text DEFAULT NULL,
+    `settings` LONGTEXT DEFAULT NULL,
     `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS `fishgame_sessions` (
     `status` enum('active','finished','disconnected') DEFAULT 'active',
     `start_time` timestamp DEFAULT CURRENT_TIMESTAMP,
     `end_time` timestamp NULL DEFAULT NULL,
-    `game_data` text DEFAULT NULL,
+    `game_data` LONGTEXT DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `session_id` (`session_id`),
     KEY `identifier` (`identifier`),
@@ -120,18 +120,34 @@ CREATE TABLE IF NOT EXISTS `fishgame_leaderboard` (
 CREATE TABLE IF NOT EXISTS `fishgame_settings` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `setting_key` varchar(100) NOT NULL,
-    `setting_value` text NOT NULL,
+    `setting_value` LONGTEXT NOT NULL,
     `description` varchar(255) DEFAULT NULL,
     `updated_at` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `setting_key` (`setting_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 修改現有表的欄位類型（如果表已存在）
+ALTER TABLE `fishgame_players` 
+MODIFY COLUMN `unlocked_weapons` LONGTEXT DEFAULT NULL,
+MODIFY COLUMN `unlocked_skills` LONGTEXT DEFAULT NULL,
+MODIFY COLUMN `settings` LONGTEXT DEFAULT NULL;
+
+ALTER TABLE `fishgame_rooms` 
+MODIFY COLUMN `settings` LONGTEXT DEFAULT NULL;
+
+ALTER TABLE `fishgame_sessions` 
+MODIFY COLUMN `game_data` LONGTEXT DEFAULT NULL;
+
+ALTER TABLE `fishgame_settings` 
+MODIFY COLUMN `setting_value` LONGTEXT NOT NULL;
+
 -- 插入預設房間數據
 INSERT INTO `fishgame_rooms` (`room_id`, `name`, `max_players`, `min_bet`, `max_bet`, `status`) VALUES
 ('room_1', '初級海域', 6, 100, 5000, 'active'),
 ('room_2', '中級海域', 8, 1000, 20000, 'active'),
-('room_3', '高級海域', 10, 5000, 50000, 'active');
+('room_3', '高級海域', 10, 5000, 50000, 'active')
+ON DUPLICATE KEY UPDATE `name` = VALUES(`name`);
 
 -- 插入預設系統設定
 INSERT INTO `fishgame_settings` (`setting_key`, `setting_value`, `description`) VALUES
@@ -140,4 +156,5 @@ INSERT INTO `fishgame_settings` (`setting_key`, `setting_value`, `description`) 
 ('daily_bonus_enabled', 'true', '每日獎勵是否啟用'),
 ('experience_multiplier', '1.0', '經驗值倍數'),
 ('coin_multiplier', '1.0', '金幣倍數'),
-('special_event_active', 'false', '特殊活動是否啟用'); 
+('special_event_active', 'false', '特殊活動是否啟用')
+ON DUPLICATE KEY UPDATE `setting_value` = VALUES(`setting_value`); 
