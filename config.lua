@@ -43,17 +43,19 @@ Config.Rooms = {
 
 -- 魚類設定
 Config.FishTypes = {
-    -- 小魚 (1-10分)
+    -- 小型魚 (1-10分) - 數量很多，可以一群群的游
     ['small_fish_1'] = {
-        name = '丑魚',
+        name = '小丑魚',
         points = 2,
         health = 1,
         speed = 3.0,
         size = 0.8,
-        model = 'small_fish_1',
+        image = 'GGL_Fish_1.png',
         rarity = 'common',
         spawnChance = 25.0,
-        color = {r = 255, g = 255, b = 0}
+        color = {r = 255, g = 255, b = 0},
+        schoolSize = {min = 3, max = 8}, -- 群體大小
+        canLeaveScreen = true -- 可以游出螢幕
     },
     ['small_fish_2'] = {
         name = '熱帶魚',
@@ -61,156 +63,460 @@ Config.FishTypes = {
         health = 1,
         speed = 3.5,
         size = 0.9,
-        model = 'small_fish_2',
+        image = 'GGL_Fish_2.png',
         rarity = 'common',
-        spawnChance = 20.0,
-        color = {r = 0, g = 255, b = 255}
+        spawnChance = 22.0,
+        color = {r = 0, g = 255, b = 255},
+        schoolSize = {min = 4, max = 10},
+        canLeaveScreen = true
     },
     ['small_fish_3'] = {
-        name = '小丑魚',
+        name = '金魚',
         points = 4,
         health = 1,
         speed = 4.0,
         size = 1.0,
-        model = 'small_fish_3',
+        image = 'GGL_Fish_3.png',
+        rarity = 'common',
+        spawnChance = 20.0,
+        color = {r = 255, g = 165, b = 0},
+        schoolSize = {min = 2, max = 6},
+        canLeaveScreen = true
+    },
+    ['small_fish_4'] = {
+        name = '斑馬魚',
+        points = 5,
+        health = 1,
+        speed = 4.5,
+        size = 0.8,
+        image = 'GGL_Fish_4.png',
+        rarity = 'common',
+        spawnChance = 18.0,
+        schoolSize = {min = 5, max = 12},
+        canLeaveScreen = true
+    },
+    ['small_fish_5'] = {
+        name = '藍鰭魚',
+        points = 6,
+        health = 1,
+        speed = 3.8,
+        size = 0.9,
+        image = 'GGL_Fish_5.png',
+        rarity = 'common',
+        spawnChance = 16.0,
+        schoolSize = {min = 3, max = 7},
+        canLeaveScreen = true
+    },
+    ['small_fish_6'] = {
+        name = '銀魚',
+        points = 7,
+        health = 2,
+        speed = 5.0,
+        size = 0.7,
+        image = 'GGL_Fish_6.png',
         rarity = 'common',
         spawnChance = 15.0,
-        color = {r = 255, g = 165, b = 0}
+        schoolSize = {min = 8, max = 15},
+        canLeaveScreen = true
     },
-    
-    -- 中魚 (10-50分)
-    ['medium_fish_1'] = {
-        name = '燈籠魚',
+    ['small_fish_7'] = {
+        name = '珊瑚魚',
+        points = 8,
+        health = 2,
+        speed = 3.2,
+        size = 1.0,
+        image = 'GGL_Fish_7.png',
+        rarity = 'common',
+        spawnChance = 14.0,
+        canLeaveScreen = true
+    },
+    ['small_fish_8'] = {
+        name = '孔雀魚',
+        points = 9,
+        health = 2,
+        speed = 4.2,
+        size = 0.8,
+        image = 'GGL_Fish_8.png',
+        rarity = 'common',
+        spawnChance = 12.0,
+        schoolSize = {min = 2, max = 5},
+        canLeaveScreen = true
+    },
+    ['small_fish_9'] = {
+        name = '鸚鵡魚',
+        points = 10,
+        health = 2,
+        speed = 3.6,
+        size = 1.1,
+        image = 'GGL_Fish_9.png',
+        rarity = 'common',
+        spawnChance = 10.0,
+        canLeaveScreen = true
+    },
+    ['small_fish_10'] = {
+        name = '海馬',
         points = 12,
         health = 2,
         speed = 2.5,
-        size = 1.3,
-        model = 'medium_fish_1',
-        rarity = 'uncommon',
+        size = 0.9,
+        image = 'GGL_Fish_10.png',
+        rarity = 'common',
         spawnChance = 8.0,
-        color = {r = 255, g = 0, b = 255}
+        canLeaveScreen = true
+    },
+    
+    -- 中型魚 - 道具魚 (特殊效果)
+    ['special_laser_fish'] = {
+        name = '雷射魚',
+        points = 30,
+        health = 3,
+        speed = 2.5,
+        size = 1.5,
+        image = 'Fish_task_16.png',
+        rarity = 'special',
+        spawnChance = 2.0,
+        specialEffect = 'laser_cannon', -- 變成雷射炮
+        effectDuration = 10000, -- 10秒
+        canLeaveScreen = true
+    },
+    ['special_bomb_fish'] = {
+        name = '炸彈魚',
+        points = 40,
+        health = 4,
+        speed = 2.0,
+        size = 1.6,
+        image = 'Fish_task_17.png',
+        rarity = 'special',
+        spawnChance = 1.5,
+        specialEffect = 'screen_bomb', -- 全螢幕清除（不含大型魚）
+        canLeaveScreen = true
+    },
+    ['special_wheel_fish'] = {
+        name = '轉盤魚',
+        points = 25,
+        health = 3,
+        speed = 3.0,
+        size = 1.4,
+        image = 'Fish_task_18.png',
+        rarity = 'special',
+        spawnChance = 2.5,
+        specialEffect = 'lucky_wheel', -- 轉盤抽獎
+        canLeaveScreen = true
+    },
+    
+    -- 中型魚 - 賞金魚 (高分數)
+    ['medium_fish_1'] = {
+        name = '燈籠魚',
+        points = 20,
+        health = 3,
+        speed = 2.5,
+        size = 1.3,
+        image = 'GGL_Fish_11.png',
+        rarity = 'uncommon',
+        spawnChance = 6.0,
+        bonusMultiplier = 2, -- 賞金倍數
+        canLeaveScreen = true
     },
     ['medium_fish_2'] = {
         name = '比目魚',
-        points = 18,
+        points = 25,
         health = 3,
         speed = 2.0,
         size = 1.5,
-        model = 'medium_fish_2',
+        image = 'GGL_Fish_12.png',
         rarity = 'uncommon',
-        spawnChance = 6.0,
-        color = {r = 139, g = 69, b = 19}
+        spawnChance = 5.5,
+        bonusMultiplier = 2,
+        canLeaveScreen = true
     },
     ['medium_fish_3'] = {
         name = '蝴蝶魚',
-        points = 25,
-        health = 3,
+        points = 30,
+        health = 4,
         speed = 2.8,
         size = 1.4,
-        model = 'medium_fish_3',
+        image = 'GGL_Fish_13.png',
         rarity = 'uncommon',
         spawnChance = 5.0,
-        color = {r = 255, g = 20, b = 147}
+        bonusMultiplier = 2.5,
+        canLeaveScreen = true
     },
-    
-    -- 大魚 (50-200分)
-    ['large_fish_1'] = {
-        name = '石斑魚',
-        points = 80,
+    ['medium_fish_4'] = {
+        name = '神仙魚',
+        points = 35,
+        health = 4,
+        speed = 2.3,
+        size = 1.6,
+        image = 'GGL_Fish_14.png',
+        rarity = 'uncommon',
+        spawnChance = 4.5,
+        bonusMultiplier = 2.5,
+        canLeaveScreen = true
+    },
+    ['medium_fish_5'] = {
+        name = '獅子魚',
+        points = 40,
+        health = 5,
+        speed = 2.1,
+        size = 1.7,
+        image = 'GGL_Fish_15.png',
+        rarity = 'uncommon',
+        spawnChance = 4.0,
+        bonusMultiplier = 3,
+        canLeaveScreen = true
+    },
+    ['medium_fish_6'] = {
+        name = '河豚',
+        points = 45,
         health = 5,
         speed = 1.8,
+        size = 1.8,
+        image = 'GGL_Fish_16.png',
+        rarity = 'uncommon',
+        spawnChance = 3.5,
+        bonusMultiplier = 3,
+        canLeaveScreen = true
+    },
+    ['medium_fish_7'] = {
+        name = '海龜',
+        points = 50,
+        health = 6,
+        speed = 1.5,
         size = 2.0,
-        model = 'large_fish_1',
-        rarity = 'rare',
+        image = 'GGL_Fish_17.png',
+        rarity = 'uncommon',
         spawnChance = 3.0,
-        color = {r = 128, g = 128, b = 128}
+        bonusMultiplier = 3.5,
+        canLeaveScreen = true
+    },
+    ['medium_fish_8'] = {
+        name = '章魚',
+        points = 55,
+        health = 6,
+        speed = 2.0,
+        size = 1.9,
+        image = 'GGL_Fish_18.png',
+        rarity = 'uncommon',
+        spawnChance = 2.8,
+        bonusMultiplier = 3.5,
+        canLeaveScreen = true
+    },
+    ['medium_fish_9'] = {
+        name = '水母',
+        points = 60,
+        health = 4,
+        speed = 1.2,
+        size = 1.7,
+        image = 'GGL_Fish_19.png',
+        rarity = 'uncommon',
+        spawnChance = 2.5,
+        bonusMultiplier = 4,
+        canLeaveScreen = true
+    },
+    ['medium_fish_10'] = {
+        name = '海星',
+        points = 65,
+        health = 7,
+        speed = 0.8,
+        size = 1.6,
+        image = 'GGL_Fish_20.png',
+        rarity = 'uncommon',
+        spawnChance = 2.2,
+        bonusMultiplier = 4,
+        canLeaveScreen = true
+    },
+    
+    -- 大型魚 (倍數累積系統)
+    ['large_fish_1'] = {
+        name = '石斑魚',
+        points = 100,
+        health = 10,
+        speed = 1.8,
+        size = 2.5,
+        image = 'GGL_Fish_21.png',
+        rarity = 'rare',
+        spawnChance = 2.0,
+        multiplierSystem = {
+            baseMultiplier = 1,
+            hitIncrement = 0.5, -- 每次擊中增加0.5倍
+            maxMultiplier = 10,
+            randomDeathChance = 0.1 -- 10%機率隨機死亡
+        },
+        canLeaveScreen = true
     },
     ['large_fish_2'] = {
         name = '金槍魚',
-        points = 120,
-        health = 6,
+        points = 150,
+        health = 15,
         speed = 2.2,
-        size = 2.2,
-        model = 'large_fish_2',
+        size = 2.8,
+        image = 'GGL_Fish_22.png',
         rarity = 'rare',
-        spawnChance = 2.0,
-        color = {r = 192, g = 192, b = 192}
+        spawnChance = 1.8,
+        multiplierSystem = {
+            baseMultiplier = 1,
+            hitIncrement = 0.8,
+            maxMultiplier = 15,
+            randomDeathChance = 0.08
+        },
+        canLeaveScreen = true
     },
     ['large_fish_3'] = {
         name = '劍魚',
-        points = 150,
-        health = 7,
+        points = 200,
+        health = 20,
         speed = 2.5,
-        size = 2.5,
-        model = 'large_fish_3',
+        size = 3.0,
+        image = 'GGL_Fish_23.png',
         rarity = 'rare',
         spawnChance = 1.5,
-        color = {r = 0, g = 0, b = 139}
+        multiplierSystem = {
+            baseMultiplier = 1,
+            hitIncrement = 1.0,
+            maxMultiplier = 20,
+            randomDeathChance = 0.06
+        },
+        canLeaveScreen = true
     },
-    
-    -- BOSS魚 (200-1000分)
-    ['boss_fish_1'] = {
-        name = '金龍魚',
+    ['large_fish_4'] = {
+        name = '鯊魚',
         points = 300,
-        health = 10,
+        health = 25,
+        speed = 2.0,
+        size = 3.5,
+        image = 'GGL_Fish_24.png',
+        rarity = 'rare',
+        spawnChance = 1.2,
+        multiplierSystem = {
+            baseMultiplier = 2,
+            hitIncrement = 1.2,
+            maxMultiplier = 25,
+            randomDeathChance = 0.05
+        },
+        canLeaveScreen = true
+    },
+    ['large_fish_5'] = {
+        name = '虎鯨',
+        points = 400,
+        health = 30,
+        speed = 1.8,
+        size = 4.0,
+        image = 'GGL_Fish_25.png',
+        rarity = 'legendary',
+        spawnChance = 1.0,
+        multiplierSystem = {
+            baseMultiplier = 2,
+            hitIncrement = 1.5,
+            maxMultiplier = 30,
+            randomDeathChance = 0.04
+        },
+        canLeaveScreen = true
+    },
+    ['large_fish_6'] = {
+        name = '巨型章魚',
+        points = 500,
+        health = 35,
         speed = 1.5,
-        size = 3.0,
-        model = 'boss_fish_1',
+        size = 4.5,
+        image = 'GGL_Fish_26.png',
         rarity = 'legendary',
         spawnChance = 0.8,
-        color = {r = 255, g = 215, b = 0}
+        multiplierSystem = {
+            baseMultiplier = 3,
+            hitIncrement = 2.0,
+            maxMultiplier = 40,
+            randomDeathChance = 0.03
+        },
+        canLeaveScreen = true
     },
-    ['boss_fish_2'] = {
-        name = '鯊魚',
-        points = 500,
-        health = 15,
-        speed = 1.8,
-        size = 3.5,
-        model = 'boss_fish_2',
-        rarity = 'legendary',
-        spawnChance = 0.3,
-        color = {r = 105, g = 105, b = 105}
-    },
-    ['boss_fish_3'] = {
-        name = '龍王',
-        points = 800,
-        health = 20,
-        speed = 1.2,
+    ['large_fish_7'] = {
+        name = '海龍',
+        points = 600,
+        health = 40,
+        speed = 1.6,
         size = 4.0,
-        model = 'boss_fish_3',
+        image = 'GGL_Fish_27.png',
         rarity = 'legendary',
+        spawnChance = 0.6,
+        multiplierSystem = {
+            baseMultiplier = 3,
+            hitIncrement = 2.5,
+            maxMultiplier = 50,
+            randomDeathChance = 0.025
+        },
+        canLeaveScreen = true
+    },
+    ['large_fish_8'] = {
+        name = '巨齒鯊',
+        points = 800,
+        health = 50,
+        speed = 1.4,
+        size = 5.0,
+        image = 'GGL_Fish_28.png',
+        rarity = 'legendary',
+        spawnChance = 0.4,
+        multiplierSystem = {
+            baseMultiplier = 4,
+            hitIncrement = 3.0,
+            maxMultiplier = 60,
+            randomDeathChance = 0.02
+        },
+        canLeaveScreen = true
+    },
+    ['large_fish_9'] = {
+        name = '深海巨獸',
+        points = 1000,
+        health = 60,
+        speed = 1.2,
+        size = 5.5,
+        image = 'GGL_Fish_29.png',
+        rarity = 'mythic',
+        spawnChance = 0.2,
+        multiplierSystem = {
+            baseMultiplier = 5,
+            hitIncrement = 4.0,
+            maxMultiplier = 80,
+            randomDeathChance = 0.015
+        },
+        canLeaveScreen = true
+    },
+    ['large_fish_10'] = {
+        name = '黃金龍魚',
+        points = 1500,
+        health = 80,
+        speed = 1.0,
+        size = 6.0,
+        image = 'GGL_Fish_30.png',
+        rarity = 'mythic',
         spawnChance = 0.1,
-        color = {r = 138, g = 43, b = 226}
+        multiplierSystem = {
+            baseMultiplier = 10,
+            hitIncrement = 5.0,
+            maxMultiplier = 100,
+            randomDeathChance = 0.01
+        },
+        canLeaveScreen = true
     },
-    
-    -- 特殊魚 (特殊效果)
-    ['special_bomb_fish'] = {
-        name = '炸彈魚',
-        points = 50,
-        health = 3,
-        speed = 2.0,
-        size = 1.8,
-        model = 'special_bomb_fish',
-        rarity = 'special',
-        spawnChance = 1.0,
-        specialEffect = 'bomb',
-        color = {r = 255, g = 0, b = 0}
-    },
-    ['special_lightning_fish'] = {
-        name = '閃電魚',
-        points = 30,
-        health = 2,
-        speed = 4.0,
-        size = 1.5,
-        model = 'special_lightning_fish',
-        rarity = 'special',
-        spawnChance = 1.2,
-        specialEffect = 'lightning',
-        color = {r = 255, g = 255, b = 0}
+    ['large_fish_11'] = {
+        name = '遠古海皇',
+        points = 2000,
+        health = 100,
+        speed = 0.8,
+        size = 7.0,
+        image = 'GGL_Fish_31.png',
+        rarity = 'mythic',
+        spawnChance = 0.05,
+        multiplierSystem = {
+            baseMultiplier = 20,
+            hitIncrement = 10.0,
+            maxMultiplier = 200,
+            randomDeathChance = 0.005
+        },
+        canLeaveScreen = true
     }
 }
 
--- 武器設定
+-- 武器設定（增加倍數）
 Config.Weapons = {
     ['cannon_1'] = {
         name = '小型砲',
@@ -221,7 +527,8 @@ Config.Weapons = {
         speed = 8.0,
         size = 0.5,
         color = {r = 255, g = 255, b = 255},
-        unlockLevel = 1
+        unlockLevel = 1,
+        multiplier = 1 -- 倍數
     },
     ['cannon_2'] = {
         name = '中型砲',
@@ -232,7 +539,8 @@ Config.Weapons = {
         speed = 10.0,
         size = 0.7,
         color = {r = 0, g = 255, b = 0},
-        unlockLevel = 5
+        unlockLevel = 5,
+        multiplier = 2
     },
     ['cannon_3'] = {
         name = '大型砲',
@@ -243,19 +551,34 @@ Config.Weapons = {
         speed = 12.0,
         size = 1.0,
         color = {r = 255, g = 0, b = 0},
-        unlockLevel = 10
+        unlockLevel = 10,
+        multiplier = 3
+    },
+    ['cannon_4'] = {
+        name = '黃金砲',
+        damage = 5,
+        cost = 80,
+        fireRate = 300,
+        range = 800,
+        speed = 15.0,
+        size = 1.2,
+        color = {r = 255, g = 215, b = 0},
+        unlockLevel = 15,
+        multiplier = 5
     },
     ['cannon_laser'] = {
         name = '雷射砲',
-        damage = 5,
-        cost = 100,
+        damage = 10,
+        cost = 200,
         fireRate = 200,
-        range = 800,
+        range = 1000,
         speed = 20.0,
         size = 0.3,
         color = {r = 255, g = 0, b = 255},
         unlockLevel = 20,
-        specialEffect = 'laser'
+        specialEffect = 'laser',
+        multiplier = 10,
+        penetrating = true -- 可以穿透多條魚
     }
 }
 
@@ -281,6 +604,13 @@ Config.SpecialSkills = {
         duration = 20000,
         cooldown = 30000,
         unlockLevel = 8
+    },
+    ['lightning_strike'] = {
+        name = '閃電打擊',
+        cost = 1000,
+        duration = 0, -- 立即效果
+        cooldown = 90000,
+        unlockLevel = 25
     }
 }
 

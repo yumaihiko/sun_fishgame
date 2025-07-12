@@ -271,8 +271,19 @@ AddEventHandler('fishgame:joinRoom', function(roomId, betAmount)
         print('^2[魚機遊戲] ^7玩家位置分配:', playerPosition)
         
         print('^2[魚機遊戲] ^7發送joinedRoom事件給客戶端')
-        TriggerClientEvent('fishgame:joinedRoom', playerId, roomId, sessionId, betAmount, playerPosition)
-        TriggerClientEvent('fishgame:showNotification', playerId, '成功加入房間', 'success')
+        TriggerClientEvent('fishgame:joinedRoom', playerId, roomId, sessionId, betAmount, playerPosition, {
+            fishTypes = Config.FishTypes,
+            weapons = Config.Weapons,
+            specialSkills = Config.SpecialSkills
+        })
+        TriggerClientEvent('fishgame:showNotification', playerId, '成功加入 ' .. Config.Rooms[roomId].name, 'success')
+        
+        -- 獲取房間內玩家列表
+        local players = FishGame.GetRoomPlayers(roomId)
+        TriggerClientEvent('fishgame:receiveRoomPlayers', playerId, players)
+        
+        -- 同步房間狀態
+        FishGame.SyncRoomState(roomId)
     else
         print('^1[魚機遊戲] ^7會話創建失敗，退還金錢')
         -- 退還金錢
@@ -383,6 +394,241 @@ AddEventHandler('fishgame:useSkill', function(sessionId, skillType)
             end
         end
     end
+end)
+
+-- 獲取排行榜數據
+RegisterServerEvent('fishgame:getLeaderboard')
+AddEventHandler('fishgame:getLeaderboard', function(period)
+    local playerId = source
+    local period = period or 'daily'
+    
+    print('^2[魚機遊戲] ^7收到排行榜請求 - 玩家:', playerId, '期間:', period)
+    
+    local query = ''
+    local params = {}
+    
+    if period == 'daily' then
+        query = [[
+            SELECT 
+                p.identifier,
+                p.nickname,
+                p.level,
+                SUM(s.score) as total_score,
+                SUM(s.coins_earned) as total_coins,
+                SUM(s.fish_caught) as total_fish,
+                MAX(s.score) as best_score
+            FROM fishgame_sessions s
+            JOIN fishgame_players p ON s.identifier = p.identifier
+            WHERE DATE(s.start_time) = CURDATE()
+            GROUP BY p.identifier, p.nickname, p.level
+            ORDER BY total_score DESC
+            LIMIT 50
+        ]]
+    elseif period == 'weekly' then
+        query = [[
+            SELECT 
+                p.identifier,
+                p.nickname,
+                p.level,
+                SUM(s.score) as total_score,
+                SUM(s.coins_earned) as total_coins,
+                SUM(s.fish_caught) as total_fish,
+                MAX(s.score) as best_score
+            FROM fishgame_sessions s
+            JOIN fishgame_players p ON s.identifier = p.identifier
+            WHERE YEARWEEK(s.start_time, 1) = YEARWEEK(CURDATE(), 1)
+            GROUP BY p.identifier, p.nickname, p.level
+            ORDER BY total_score DESC
+            LIMIT 50
+        ]]
+    elseif period == 'monthly' then
+        query = [[
+            SELECT 
+                p.identifier,
+                p.nickname,
+                p.level,
+                SUM(s.score) as total_score,
+                SUM(s.coins_earned) as total_coins,
+                SUM(s.fish_caught) as total_fish,
+                MAX(s.score) as best_score
+            FROM fishgame_sessions s
+            JOIN fishgame_players p ON s.identifier = p.identifier
+            WHERE YEAR(s.start_time) = YEAR(CURDATE()) 
+            AND MONTH(s.start_time) = MONTH(CURDATE())
+            GROUP BY p.identifier, p.nickname, p.level
+            ORDER BY total_score DESC
+            LIMIT 50
+        ]]
+    else -- total
+        query = [[
+            SELECT 
+                p.identifier,
+                p.nickname,
+                p.level,
+                p.total_coins_earned as total_coins,
+                p.total_fish_caught as total_fish,
+                p.best_score,
+                p.experience as total_score
+            FROM fishgame_players p
+            ORDER BY p.experience DESC
+            LIMIT 50
+        ]]
+    end
+    
+    MySQL.query(query, params, function(result)
+        if result then
+            local leaderboard = {}
+            for i, player in ipairs(result) do
+                table.insert(leaderboard, {
+                    rank = i,
+                    identifier = player.identifier,
+                    name = player.nickname or 'Unknown',
+                    level = player.level,
+                    score = player.total_score or 0,
+                    coins = player.total_coins or 0,
+                    fishCaught = player.total_fish or 0,
+                    bestScore = player.best_score or 0
+                })
+            end
+            
+            TriggerClientEvent('fishgame:ui_updateLeaderboard', playerId, {
+                period = period,
+                data = leaderboard,
+                timestamp = os.time()
+            })
+        else
+            TriggerClientEvent('fishgame:ui_updateLeaderboard', playerId, {
+                period = period,
+                data = {},
+                error = '無法獲取排行榜數據'
+            })
+        end
+    end)
+end)
+
+-- 獲取統計數據
+RegisterServerEvent('fishgame:getStatistics')
+AddEventHandler('fishgame:getStatistics', function()
+    local playerId = source
+    local xPlayer = ESX.GetPlayerFromId(playerId)
+    if not xPlayer then return end
+    
+    local identifier = xPlayer.identifier
+    
+    print('^2[魚機遊戲] ^7收到統計數據請求 - 玩家:', playerId)
+    
+    -- 獲取玩家統計數據
+    MySQL.query('SELECT * FROM fishgame_players WHERE identifier = ?', {identifier}, function(playerResult)
+        if playerResult and playerResult[1] then
+            local playerData = playerResult[1]
+            
+            -- 獲取遊戲會話統計
+            MySQL.query([[
+                SELECT 
+                    COUNT(*) as total_sessions,
+                    SUM(score) as lifetime_score,
+                    AVG(score) as avg_score,
+                    SUM(fish_caught) as lifetime_fish,
+                    AVG(fish_caught) as avg_fish,
+                    SUM(bullets_fired) as lifetime_bullets,
+                    AVG(bullets_fired) as avg_bullets,
+                    SUM(coins_earned) as lifetime_earned,
+                    AVG(coins_earned) as avg_earned,
+                    SUM(coins_spent) as lifetime_spent,
+                    AVG(coins_spent) as avg_spent,
+                    MAX(score) as best_session_score,
+                    MAX(fish_caught) as best_session_fish,
+                    MAX(coins_earned) as best_session_coins
+                FROM fishgame_sessions 
+                WHERE identifier = ?
+            ]], {identifier}, function(sessionResult)
+                local sessionStats = sessionResult and sessionResult[1] or {}
+                
+                -- 獲取魚類捕獲統計
+                MySQL.query([[
+                    SELECT 
+                        fish_type,
+                        COUNT(*) as catch_count,
+                        SUM(fish_points) as total_points,
+                        SUM(coins_earned) as total_coins
+                    FROM fishgame_catches 
+                    WHERE identifier = ?
+                    GROUP BY fish_type
+                    ORDER BY catch_count DESC
+                    LIMIT 20
+                ]], {identifier}, function(catchResult)
+                    local fishStats = {}
+                    if catchResult then
+                        for _, fish in ipairs(catchResult) do
+                            local fishConfig = Config.FishTypes[fish.fish_type]
+                            table.insert(fishStats, {
+                                type = fish.fish_type,
+                                name = fishConfig and fishConfig.name or 'Unknown',
+                                count = fish.catch_count,
+                                points = fish.total_points,
+                                coins = fish.total_coins
+                            })
+                        end
+                    end
+                    
+                    -- 組合所有統計數據
+                    local statistics = {
+                        player = {
+                            level = playerData.level,
+                            experience = playerData.experience,
+                            totalCoinsEarned = playerData.total_coins_earned,
+                            totalGamesPlayed = playerData.total_games_played,
+                            totalFishCaught = playerData.total_fish_caught,
+                            bestScore = playerData.best_score,
+                            unlockedWeapons = json.decode(playerData.unlocked_weapons or '[]'),
+                            unlockedSkills = json.decode(playerData.unlocked_skills or '[]'),
+                            createdAt = playerData.created_at
+                        },
+                        sessions = {
+                            totalSessions = tonumber(sessionStats.total_sessions) or 0,
+                            lifetimeScore = tonumber(sessionStats.lifetime_score) or 0,
+                            avgScore = tonumber(sessionStats.avg_score) or 0,
+                            lifetimeFish = tonumber(sessionStats.lifetime_fish) or 0,
+                            avgFish = tonumber(sessionStats.avg_fish) or 0,
+                            lifetimeBullets = tonumber(sessionStats.lifetime_bullets) or 0,
+                            avgBullets = tonumber(sessionStats.avg_bullets) or 0,
+                            lifetimeEarned = tonumber(sessionStats.lifetime_earned) or 0,
+                            avgEarned = tonumber(sessionStats.avg_earned) or 0,
+                            lifetimeSpent = tonumber(sessionStats.lifetime_spent) or 0,
+                            avgSpent = tonumber(sessionStats.avg_spent) or 0,
+                            bestSessionScore = tonumber(sessionStats.best_session_score) or 0,
+                            bestSessionFish = tonumber(sessionStats.best_session_fish) or 0,
+                            bestSessionCoins = tonumber(sessionStats.best_session_coins) or 0
+                        },
+                        fishStats = fishStats
+                    }
+                    
+                    TriggerClientEvent('fishgame:ui_updateStatistics', playerId, statistics)
+                end)
+            end)
+        else
+            TriggerClientEvent('fishgame:ui_updateStatistics', playerId, {
+                error = '無法獲取統計數據'
+            })
+        end
+    end)
+end)
+
+-- 保存設定
+RegisterServerEvent('fishgame:saveSettings')
+AddEventHandler('fishgame:saveSettings', function(settings)
+    local playerId = source
+    local xPlayer = ESX.GetPlayerFromId(playerId)
+    if not xPlayer then return end
+    
+    local identifier = xPlayer.identifier
+    
+    -- 更新玩家設定（可以保存到數據庫或暫存）
+    if FishGame.Players[playerId] then
+        FishGame.Players[playerId].settings = settings
+    end
+    
+    TriggerClientEvent('fishgame:showNotification', playerId, '設定已保存', 'success')
 end)
 
 -- 定時清理過期會話

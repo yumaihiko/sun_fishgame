@@ -361,8 +361,16 @@ AddEventHandler('fishgame:receiveRoomList', function(rooms)
 end)
 
 RegisterNetEvent('fishgame:joinedRoom')
-AddEventHandler('fishgame:joinedRoom', function(roomId, sessionId, betAmount, playerPosition)
+AddEventHandler('fishgame:joinedRoom', function(roomId, sessionId, betAmount, playerPosition, gameConfig)
     print('^2[魚機遊戲] ^7收到joinedRoom事件 - 房間:', roomId, '會話:', sessionId, '下注:', betAmount, '位置:', playerPosition)
+    
+    -- 如果有遊戲配置，更新到NUI
+    if gameConfig then
+        SendNUIMessage({
+            type = 'updateGameConfig',
+            config = gameConfig
+        })
+    end
     
     StartGame(roomId, sessionId, betAmount, playerPosition)
 end)

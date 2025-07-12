@@ -80,7 +80,6 @@ CREATE TABLE IF NOT EXISTS `fishgame_catches` (
     KEY `is_final_blow` (`is_final_blow`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 添加多人攻擊支持的新字段（如果表已存在）
 ALTER TABLE `fishgame_catches` 
 ADD COLUMN IF NOT EXISTS `damage_dealt` int(11) DEFAULT 0,
 ADD COLUMN IF NOT EXISTS `damage_ratio` decimal(5,4) DEFAULT 0.0000,

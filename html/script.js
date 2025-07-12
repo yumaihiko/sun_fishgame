@@ -521,7 +521,7 @@ function getSkillName(skillType) {
         'freeze_all': '冰凍全場',
         'double_points': '雙倍積分',
         'auto_aim': '自動瞄準',
-        'lightning_strike': '雷電打擊'
+        'lightning_strike': '閃電打擊'
     };
     return skillNames[skillType] || '未知技能';
 }
@@ -722,6 +722,12 @@ function showGameUI(data) {
 // 初始化遊戲UI
 function initializeGameUI(data) {
     console.log('initializeGameUI called');
+    
+    // 預加載魚類圖片
+    preloadFishImages();
+    
+    // 預加載玩家圖片
+    preloadPlayerImages();
     
     // 更新房間信息
     const roomName = document.getElementById('roomName');
@@ -942,8 +948,8 @@ function updateFish(deltaTime) {
         const fish = gameState.gameData.fish[fishId];
         if (!fish) return;
         
-        // 清理死魚或超時的魚
-        if (!fish.alive || (currentTime - fish.spawnTime) > 30000) {
+        // 清理死魚（移除超時檢查，只清理死魚）
+        if (!fish.alive) {
             delete gameState.gameData.fish[fishId];
             return;
         }
@@ -957,26 +963,41 @@ function updateFish(deltaTime) {
         fish.position.x += fish.velocity.x * deltaTime / 16;
         fish.position.y += fish.velocity.y * deltaTime / 16;
         
-        // 邊界檢查 - 魚類游出邊界後移除
-        if (fish.position.x > canvas.width + 100 || fish.position.x < -100 ||
-            fish.position.y > canvas.height + 100 || fish.position.y < -100) {
-            delete gameState.gameData.fish[fishId];
-            return;
-        }
-        
-        // 魚類在邊界附近時轉向
-        const margin = 50;
-        if (fish.position.x < margin && fish.velocity.x < 0) {
-            fish.velocity.x = Math.abs(fish.velocity.x);
-        }
-        if (fish.position.x > canvas.width - margin && fish.velocity.x > 0) {
-            fish.velocity.x = -Math.abs(fish.velocity.x);
-        }
-        if (fish.position.y < margin && fish.velocity.y < 0) {
-            fish.velocity.y = Math.abs(fish.velocity.y);
-        }
-        if (fish.position.y > canvas.height - margin && fish.velocity.y > 0) {
-            fish.velocity.y = -Math.abs(fish.velocity.y);
+        // 根據魚的設定處理邊界
+        if (fish.canLeaveScreen) {
+            // 可以游出螢幕的魚
+            const maxDistance = 500; // 螢幕外最大距離
+            
+            if (fish.position.x > canvas.width + maxDistance || fish.position.x < -maxDistance ||
+                fish.position.y > canvas.height + maxDistance || fish.position.y < -maxDistance) {
+                // 從另一邊返回
+                if (fish.position.x > canvas.width + maxDistance) {
+                    fish.position.x = -maxDistance;
+                } else if (fish.position.x < -maxDistance) {
+                    fish.position.x = canvas.width + maxDistance;
+                }
+                
+                if (fish.position.y > canvas.height + maxDistance) {
+                    fish.position.y = -maxDistance;
+                } else if (fish.position.y < -maxDistance) {
+                    fish.position.y = canvas.height + maxDistance;
+                }
+            }
+        } else {
+            // 不能游出螢幕的魚，在邊界附近轉向
+            const margin = 50;
+            if (fish.position.x < margin && fish.velocity.x < 0) {
+                fish.velocity.x = Math.abs(fish.velocity.x);
+            }
+            if (fish.position.x > canvas.width - margin && fish.velocity.x > 0) {
+                fish.velocity.x = -Math.abs(fish.velocity.x);
+            }
+            if (fish.position.y < margin && fish.velocity.y < 0) {
+                fish.velocity.y = Math.abs(fish.velocity.y);
+            }
+            if (fish.position.y > canvas.height - margin && fish.velocity.y > 0) {
+                fish.velocity.y = -Math.abs(fish.velocity.y);
+            }
         }
         
         // 隨機改變方向
@@ -1120,7 +1141,15 @@ function drawFish() {
         
         ctx.save();
         ctx.translate(fish.position.x, fish.position.y);
-        ctx.scale(fish.size, fish.size);
+        
+        // 根據魚的移動方向決定是否需要水平翻轉
+        const isMovingLeft = fish.velocity && fish.velocity.x < 0;
+        if (isMovingLeft) {
+            // 水平翻轉
+            ctx.scale(-fish.size, fish.size);
+        } else {
+            ctx.scale(fish.size, fish.size);
+        }
         
         // 設置陰影效果
         ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
@@ -1128,27 +1157,103 @@ function drawFish() {
         ctx.shadowOffsetX = 2;
         ctx.shadowOffsetY = 2;
         
-        // 繪製emoji魚類
-        ctx.font = '30px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        
         // 根據稀有度添加光環效果
         if (fish.rarity === 'rare') {
             ctx.shadowColor = 'rgba(255, 215, 0, 0.6)';
-            ctx.shadowBlur = 10;
-        } else if (fish.rarity === 'epic') {
-            ctx.shadowColor = 'rgba(128, 0, 128, 0.8)';
             ctx.shadowBlur = 15;
+        } else if (fish.rarity === 'legendary') {
+            ctx.shadowColor = 'rgba(128, 0, 128, 0.8)';
+            ctx.shadowBlur = 20;
+        } else if (fish.rarity === 'mythic') {
+            ctx.shadowColor = 'rgba(255, 0, 255, 0.9)';
+            ctx.shadowBlur = 25;
         }
         
-        ctx.fillText(fish.emoji, 0, 0);
+        // 如果魚有圖片，使用圖片；否則使用emoji或形狀
+        if (fish.image) {
+            // 確保圖片已加載
+            if (!fishImages[fish.image]) {
+                fishImages[fish.image] = new Image();
+                fishImages[fish.image].src = `images/${fish.image}`; // 修正路徑
+                fishImages[fish.image].onload = function() {
+                    // 圖片加載完成後會在下一幀繪製
+                };
+            }
+            
+            const img = fishImages[fish.image];
+            if (img.complete && img.naturalHeight !== 0) {
+                // 繪製魚的圖片
+                const width = 50; // 基礎寬度
+                const height = 50; // 基礎高度
+                ctx.drawImage(img, -width/2, -height/2, width, height);
+            } else {
+                // 圖片還未加載，顯示占位符
+                ctx.fillStyle = fish.color ? `rgb(${fish.color.r}, ${fish.color.g}, ${fish.color.b})` : 'blue';
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 25, 15, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 魚尾
+                ctx.beginPath();
+                ctx.moveTo(20, 0);
+                ctx.lineTo(35, -10);
+                ctx.lineTo(35, 10);
+                ctx.closePath();
+                ctx.fill();
+            }
+        } else if (fish.emoji) {
+            // 使用emoji
+            ctx.font = '30px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(fish.emoji, 0, 0);
+        } else {
+            // 使用默認形狀
+            ctx.fillStyle = fish.color ? `rgb(${fish.color.r}, ${fish.color.g}, ${fish.color.b})` : 'blue';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 25, 15, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // 魚尾
+            ctx.beginPath();
+            ctx.moveTo(20, 0);
+            ctx.lineTo(35, -10);
+            ctx.lineTo(35, 10);
+            ctx.closePath();
+            ctx.fill();
+        }
         
         ctx.restore();
         
         // 繪製血條（如果受傷）
         if (fish.health < fish.maxHealth) {
             drawHealthBar(fish);
+        }
+        
+        // 顯示大型魚的倍數
+        if (fish.multiplierData) {
+            ctx.save();
+            ctx.font = 'bold 16px Arial';
+            ctx.fillStyle = 'yellow';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 3;
+            ctx.textAlign = 'center';
+            
+            const multiplierText = `x${fish.multiplierData.currentMultiplier}`;
+            const textY = fish.position.y - fish.size * 50;
+            
+            // 描邊文字
+            ctx.strokeText(multiplierText, fish.position.x, textY);
+            ctx.fillText(multiplierText, fish.position.x, textY);
+            
+            // 顯示擊中次數
+            ctx.font = '12px Arial';
+            ctx.fillStyle = 'white';
+            const hitText = `擊中: ${fish.multiplierData.hitCount}`;
+            ctx.strokeText(hitText, fish.position.x, textY + 20);
+            ctx.fillText(hitText, fish.position.x, textY + 20);
+            
+            ctx.restore();
         }
         
         // 繪製魚類名稱和分數（調試用）
@@ -1159,6 +1264,56 @@ function drawFish() {
             ctx.textAlign = 'center';
             ctx.fillText(`${fish.name} (${fish.points}分)`, fish.position.x, fish.position.y + fish.size * 40);
             ctx.restore();
+        }
+    });
+}
+
+// 魚類圖片緩存
+const fishImages = {};
+
+// 玩家圖片緩存
+const playerImages = {};
+
+// 預加載玩家圖片
+function preloadPlayerImages() {
+    console.log('Preloading player images...');
+    
+    for (let i = 1; i <= 6; i++) {
+        const playerImageName = `player${i.toString().padStart(3, '0')}.png`;
+        if (!playerImages[playerImageName]) {
+            const img = new Image();
+            img.src = `images/${playerImageName}`;
+            img.onload = function() {
+                console.log('Loaded player image:', playerImageName);
+            };
+            img.onerror = function() {
+                console.error('Failed to load player image:', playerImageName);
+            };
+            playerImages[playerImageName] = img;
+        }
+    }
+}
+
+// 預加載魚類圖片
+function preloadFishImages() {
+    console.log('Preloading fish images...');
+    
+    if (!gameConfig.fishTypes) {
+        console.log('No fish types to preload');
+        return;
+    }
+    
+    Object.values(gameConfig.fishTypes).forEach(fishData => {
+        if (fishData.image && !fishImages[fishData.image]) {
+            const img = new Image();
+            img.src = `images/${fishData.image}`; // 修正路徑，移除 html/ 前綴
+            img.onload = function() {
+                console.log('Loaded fish image:', fishData.image);
+            };
+            img.onerror = function() {
+                console.error('Failed to load fish image:', fishData.image);
+            };
+            fishImages[fishData.image] = img;
         }
     });
 }
@@ -1521,49 +1676,99 @@ function drawPlayerPositions() {
         const isOccupied = index < 3; // 假設前3個位置被佔用（可以從房間狀態獲取）
         // TODO: 從房間狀態獲取實際的玩家位置信息
         
-        if (isCurrentPlayer) {
-            // 當前玩家位置 - 高亮顯示
-            ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
-            ctx.strokeStyle = 'rgba(0, 255, 0, 1.0)';
-            ctx.lineWidth = 3;
-        } else if (isOccupied) {
-            // 其他玩家位置
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-            ctx.lineWidth = 2;
+        // 獲取玩家圖片
+        const playerImageName = `player${(index + 1).toString().padStart(3, '0')}.png`;
+        const playerImg = playerImages[playerImageName];
+        
+        if (playerImg && playerImg.complete && playerImg.naturalHeight !== 0) {
+            // 使用玩家圖片
+            const imgSize = isCurrentPlayer ? 60 : 50; // 當前玩家圖片稍大
+            
+            // 設置圖片透明度和效果
+            if (isCurrentPlayer) {
+                ctx.globalAlpha = 1.0;
+                // 當前玩家添加發光效果
+                ctx.shadowColor = 'rgba(0, 255, 0, 0.8)';
+                ctx.shadowBlur = 20;
+            } else if (isOccupied) {
+                ctx.globalAlpha = 0.8;
+                ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
+                ctx.shadowBlur = 10;
+            } else {
+                ctx.globalAlpha = 0.4;
+                ctx.shadowColor = 'rgba(100, 100, 100, 0.3)';
+                ctx.shadowBlur = 5;
+            }
+            
+            // 繪製玩家圖片
+            ctx.drawImage(playerImg, pos.x - imgSize/2, pos.y - imgSize/2, imgSize, imgSize);
+            
+            // 如果是當前玩家，添加額外的邊框效果
+            if (isCurrentPlayer) {
+                ctx.globalAlpha = 1.0;
+                ctx.strokeStyle = 'rgba(0, 255, 0, 1.0)';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, imgSize/2 + 5, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                // 添加"你"的標記
+                ctx.fillStyle = 'rgba(0, 255, 0, 1.0)';
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+                ctx.shadowBlur = 3;
+                ctx.fillText('你', pos.x, pos.y + imgSize/2 + 20);
+            }
         } else {
-            // 空位置
-            ctx.fillStyle = 'rgba(100, 100, 100, 0.3)';
-            ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
-            ctx.lineWidth = 1;
-        }
-        
-        // 繪製圓形標記
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, 15, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        
-        // 繪製玩家編號
-        ctx.fillStyle = isCurrentPlayer ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)';
-        ctx.font = 'bold 14px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText((index + 1).toString(), pos.x, pos.y);
-        
-        // 如果是當前玩家，添加額外標記
-        if (isCurrentPlayer) {
-            ctx.strokeStyle = 'rgba(0, 255, 0, 1.0)';
-            ctx.lineWidth = 2;
+            // 圖片未加載完成，使用原來的圓形標記作為備用
+            if (isCurrentPlayer) {
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+                ctx.strokeStyle = 'rgba(0, 255, 0, 1.0)';
+                ctx.lineWidth = 3;
+            } else if (isOccupied) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.lineWidth = 2;
+            } else {
+                ctx.fillStyle = 'rgba(100, 100, 100, 0.3)';
+                ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
+                ctx.lineWidth = 1;
+            }
+            
+            // 繪製圓形標記
             ctx.beginPath();
-            ctx.arc(pos.x, pos.y, 25, 0, Math.PI * 2);
+            ctx.arc(pos.x, pos.y, 15, 0, Math.PI * 2);
+            ctx.fill();
             ctx.stroke();
             
-            // 添加"你"的標記
-            ctx.fillStyle = 'rgba(0, 255, 0, 1.0)';
-            ctx.font = 'bold 12px Arial';
-            ctx.fillText('你', pos.x, pos.y + 35);
+            // 繪製玩家編號
+            ctx.fillStyle = isCurrentPlayer ? 'rgba(0, 0, 0, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText((index + 1).toString(), pos.x, pos.y);
+            
+            // 如果是當前玩家，添加額外標記
+            if (isCurrentPlayer) {
+                ctx.strokeStyle = 'rgba(0, 255, 0, 1.0)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, 25, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                // 添加"你"的標記
+                ctx.fillStyle = 'rgba(0, 255, 0, 1.0)';
+                ctx.font = 'bold 12px Arial';
+                ctx.fillText('你', pos.x, pos.y + 35);
+            }
         }
+        
+        // 重置陰影和透明度
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1.0;
         
         ctx.restore();
     });
@@ -1748,6 +1953,117 @@ function loadGameSettings() {
 // 顯示排行榜
 function showLeaderboard() {
     document.getElementById('leaderboardModal').style.display = 'flex';
+    
+    // 顯示載入動畫
+    const leaderboardContent = document.getElementById('leaderboardContent');
+    if (leaderboardContent) {
+        leaderboardContent.innerHTML = `
+            <div class="leaderboard-loading">
+                <div class="spinner"></div>
+                <div>載入排行榜中...</div>
+            </div>
+        `;
+    }
+    
+    // 預設顯示今日排行榜
+    showLeaderboardTab('daily');
+}
+
+// 顯示特定期間的排行榜
+function showLeaderboardTab(period) {
+    // 更新標籤按鈕狀態
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    const activeTab = document.querySelector(`.tab-btn[onclick*="${period}"]`);
+    if (activeTab) {
+        activeTab.classList.add('active');
+    }
+    
+    // 發送請求獲取排行榜數據
+    fetch(`https://${GetParentResourceName()}/ui_action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action: 'navigate',
+            data: { 
+                screen: 'leaderboard',
+                period: period
+            }
+        })
+    }).then(() => {
+        console.log('Leaderboard request sent for period:', period);
+    }).catch(error => {
+        console.error('Failed to request leaderboard:', error);
+        showLeaderboardError();
+    });
+}
+
+// 更新排行榜內容
+function updateLeaderboardContent(data) {
+    const leaderboardContent = document.getElementById('leaderboardContent');
+    if (!leaderboardContent) return;
+    
+    if (data.error) {
+        showLeaderboardError(data.error);
+        return;
+    }
+    
+    if (!data.data || data.data.length === 0) {
+        leaderboardContent.innerHTML = `
+            <div style="text-align: center; padding: 50px; opacity: 0.7;">
+                <p>暫無排行榜數據</p>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = '';
+    data.data.forEach((player, index) => {
+        const rankClass = index === 0 ? 'first' : index === 1 ? 'second' : index === 2 ? 'third' : '';
+        const rankIcon = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+        
+        html += `
+            <div class="leaderboard-item">
+                <div class="rank ${rankClass}">${rankIcon || player.rank}</div>
+                <div class="player-info-leaderboard">
+                    <div>
+                        <div class="player-name-leaderboard">${player.name}</div>
+                        <div style="font-size: 12px; opacity: 0.7;">等級 ${player.level}</div>
+                    </div>
+                    <div class="player-stats">
+                        <div class="stat-item">
+                            <div class="stat-label">積分</div>
+                            <div class="stat-value">${formatNumber(player.score)}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">金幣</div>
+                            <div class="stat-value">${formatNumber(player.coins)}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">捕魚</div>
+                            <div class="stat-value">${formatNumber(player.fishCaught)}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    leaderboardContent.innerHTML = html;
+}
+
+// 顯示排行榜錯誤
+function showLeaderboardError(message = '無法載入排行榜') {
+    const leaderboardContent = document.getElementById('leaderboardContent');
+    if (leaderboardContent) {
+        leaderboardContent.innerHTML = `
+            <div style="text-align: center; padding: 50px; opacity: 0.7;">
+                <p style="color: #ff6b6b;">${message}</p>
+            </div>
+        `;
+    }
 }
 
 // 關閉排行榜
@@ -1758,6 +2074,34 @@ function closeLeaderboard() {
 // 顯示統計資料
 function showStatistics() {
     document.getElementById('statisticsModal').style.display = 'flex';
+    
+    // 顯示載入動畫
+    const statsGrid = document.getElementById('statsGrid');
+    if (statsGrid) {
+        statsGrid.innerHTML = `
+            <div class="leaderboard-loading" style="grid-column: 1 / -1;">
+                <div class="spinner"></div>
+                <div>載入統計資料中...</div>
+            </div>
+        `;
+    }
+    
+    // 發送請求獲取統計資料
+    fetch(`https://${GetParentResourceName()}/ui_action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action: 'navigate',
+            data: { 
+                screen: 'statistics'
+            }
+        })
+    }).then(() => {
+        console.log('Statistics request sent');
+    }).catch(error => {
+        console.error('Failed to request statistics:', error);
+        updateStatisticsContent({ error: '無法載入統計資料' });
+    });
 }
 
 // 關閉統計資料
@@ -1796,6 +2140,16 @@ window.addEventListener('message', function(event) {
             hideGameUI();
             break;
             
+        case 'updateGameConfig':
+            console.log('Received game config:', data.config);
+            if (data.config) {
+                gameConfig = data.config;
+                // 收到配置後預加載圖片
+                preloadFishImages();
+                preloadPlayerImages();
+            }
+            break;
+            
         case 'updateRoomList':
             console.log('Received room list update:', data.rooms);
             updateRoomList(data.rooms);
@@ -1823,6 +2177,14 @@ window.addEventListener('message', function(event) {
             
         case 'skillActivated':
             handleSkillActivated(data.skillData);
+            break;
+            
+        case 'leaderboard_updated':
+            updateLeaderboardContent(data);
+            break;
+            
+        case 'statistics_updated':
+            updateStatisticsContent(data.data);
             break;
     }
 });
@@ -2218,73 +2580,155 @@ function generateInitialFish() {
 
 // 生成隨機魚類
 function generateRandomFish() {
-    if (!canvas) return;
+    if (!canvas || !gameConfig.fishTypes) return;
     
-    const fishTypes = [
-        { emoji: '🐟', name: '小魚', points: 5, health: 1, speed: 2, size: 0.8, rarity: 'common' },
-        { emoji: '🐠', name: '熱帶魚', points: 8, health: 1, speed: 2.5, size: 0.9, rarity: 'common' },
-        { emoji: '🐡', name: '河豚', points: 15, health: 2, speed: 1.5, size: 1.2, rarity: 'uncommon' },
-        { emoji: '🦈', name: '鯊魚', points: 50, health: 5, speed: 1, size: 2.0, rarity: 'rare' },
-        { emoji: '🐳', name: '鯨魚', points: 100, health: 10, speed: 0.8, size: 3.0, rarity: 'epic' },
-        { emoji: '🐙', name: '章魚', points: 30, health: 3, speed: 1.8, size: 1.5, rarity: 'uncommon' },
-        { emoji: '🦑', name: '烏賊', points: 25, health: 2, speed: 2.2, size: 1.3, rarity: 'uncommon' },
-        { emoji: '🐢', name: '海龜', points: 40, health: 4, speed: 1.2, size: 1.8, rarity: 'rare' }
-    ];
+    // 從配置中獲取所有魚類類型
+    const fishTypeKeys = Object.keys(gameConfig.fishTypes);
+    if (fishTypeKeys.length === 0) {
+        console.log('No fish types available in config');
+        return;
+    }
     
-    // 根據稀有度選擇魚類
-    const rarityWeights = { common: 50, uncommon: 30, rare: 15, epic: 5 };
-    const selectedFish = selectFishByRarity(fishTypes, rarityWeights);
+    // 根據稀有度權重選擇魚類
+    const rarityWeights = {
+        common: 60,
+        uncommon: 25,
+        special: 10,
+        rare: 4,
+        legendary: 0.8,
+        mythic: 0.2
+    };
     
+    // 計算總權重
+    let totalWeight = 0;
+    const weightedFishTypes = [];
+    
+    fishTypeKeys.forEach(fishTypeKey => {
+        const fishData = gameConfig.fishTypes[fishTypeKey];
+        const weight = rarityWeights[fishData.rarity] || 1;
+        totalWeight += weight;
+        weightedFishTypes.push({
+            key: fishTypeKey,
+            weight: totalWeight,
+            data: fishData
+        });
+    });
+    
+    // 根據權重隨機選擇
+    const random = Math.random() * totalWeight;
+    let selectedFishType = null;
+    
+    for (const weightedFish of weightedFishTypes) {
+        if (random <= weightedFish.weight) {
+            selectedFishType = weightedFish;
+            break;
+        }
+    }
+    
+    if (!selectedFishType) {
+        console.log('Failed to select fish type');
+        return;
+    }
+    
+    const fishData = selectedFishType.data;
     const fishId = 'fish_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     
     // 隨機生成位置（從屏幕邊緣進入）
     const side = Math.floor(Math.random() * 4); // 0:上, 1:右, 2:下, 3:左
     let x, y, vx, vy;
     
+    const spawnDistance = 100; // 在螢幕外生成的距離
+    
     switch (side) {
         case 0: // 從上方進入
             x = Math.random() * canvas.width;
-            y = -50;
-            vx = (Math.random() - 0.5) * selectedFish.speed;
-            vy = Math.random() * selectedFish.speed + 0.5;
+            y = -spawnDistance;
+            vx = (Math.random() - 0.5) * fishData.speed;
+            vy = Math.random() * fishData.speed + 0.5;
             break;
         case 1: // 從右側進入
-            x = canvas.width + 50;
+            x = canvas.width + spawnDistance;
             y = Math.random() * canvas.height;
-            vx = -Math.random() * selectedFish.speed - 0.5;
-            vy = (Math.random() - 0.5) * selectedFish.speed;
+            vx = -Math.random() * fishData.speed - 0.5;
+            vy = (Math.random() - 0.5) * fishData.speed;
             break;
         case 2: // 從下方進入
             x = Math.random() * canvas.width;
-            y = canvas.height + 50;
-            vx = (Math.random() - 0.5) * selectedFish.speed;
-            vy = -Math.random() * selectedFish.speed - 0.5;
+            y = canvas.height + spawnDistance;
+            vx = (Math.random() - 0.5) * fishData.speed;
+            vy = -Math.random() * fishData.speed - 0.5;
             break;
         case 3: // 從左側進入
-            x = -50;
+            x = -spawnDistance;
             y = Math.random() * canvas.height;
-            vx = Math.random() * selectedFish.speed + 0.5;
-            vy = (Math.random() - 0.5) * selectedFish.speed;
+            vx = Math.random() * fishData.speed + 0.5;
+            vy = (Math.random() - 0.5) * fishData.speed;
             break;
     }
     
+    // 如果是群體魚，生成多條
+    const schoolSize = fishData.schoolSize ? 
+        Math.floor(Math.random() * (fishData.schoolSize.max - fishData.schoolSize.min + 1)) + fishData.schoolSize.min : 1;
+    
+    const schoolId = fishData.schoolSize ? 
+        'school_' + Date.now() + '_' + selectedFishType.key : null;
+    
+    // 生成主魚
     gameState.gameData.fish[fishId] = {
         id: fishId,
-        emoji: selectedFish.emoji,
-        name: selectedFish.name,
-        points: selectedFish.points,
-        health: selectedFish.health,
-        maxHealth: selectedFish.health,
-        speed: selectedFish.speed,
-        size: selectedFish.size,
-        rarity: selectedFish.rarity,
+        type: selectedFishType.key,
+        name: fishData.name,
+        points: fishData.points,
+        health: fishData.health,
+        maxHealth: fishData.health,
+        speed: fishData.speed,
+        size: fishData.size,
+        rarity: fishData.rarity,
+        image: fishData.image,
+        color: fishData.color,
+        canLeaveScreen: fishData.canLeaveScreen || false,
         position: { x: x, y: y },
         velocity: { x: vx, y: vy },
         alive: true,
-        spawnTime: Date.now()
+        spawnTime: Date.now(),
+        schoolId: schoolId,
+        specialEffect: fishData.specialEffect,
+        bonusMultiplier: fishData.bonusMultiplier,
+        multiplierSystem: fishData.multiplierSystem
     };
     
-    console.log('Generated fish:', selectedFish.name, 'at position:', x, y);
+    // 如果是大型魚，初始化倍數系統
+    if (fishData.multiplierSystem) {
+        gameState.gameData.fish[fishId].multiplierData = {
+            currentMultiplier: fishData.multiplierSystem.baseMultiplier,
+            hitCount: 0,
+            lastHitTime: 0
+        };
+    }
+    
+    // 如果是群體魚，生成額外的同伴
+    if (schoolId && schoolSize > 1) {
+        for (let i = 1; i < schoolSize && i < 5; i++) { // 最多生成5條同伴
+            const companionId = fishId + '_companion_' + i;
+            const offsetX = (Math.random() - 0.5) * 100;
+            const offsetY = (Math.random() - 0.5) * 100;
+            
+            gameState.gameData.fish[companionId] = {
+                ...gameState.gameData.fish[fishId],
+                id: companionId,
+                position: { 
+                    x: x + offsetX, 
+                    y: y + offsetY 
+                },
+                velocity: {
+                    x: vx + (Math.random() - 0.5) * 0.5,
+                    y: vy + (Math.random() - 0.5) * 0.5
+                }
+            };
+        }
+    }
+    
+    console.log('Generated fish:', fishData.name, 'at position:', x, y);
 }
 
 // 根據稀有度選擇魚類
@@ -2763,15 +3207,15 @@ function showRewardEffect(data) {
 function handleOtherPlayerShoot(shootData) {
     console.log('其他玩家射擊:', shootData);
     
-    // 獲取其他玩家的射擊位置
+    // 獲取其他玩家的射擊位置（與 drawPlayerPositions 使用相同的位置）
     const otherPlayerPosition = shootData.playerPosition || 0;
     const positions = [
-        { x: canvas.width * 0.15, y: canvas.height - 80 },
-        { x: canvas.width * 0.30, y: canvas.height - 80 },
-        { x: canvas.width * 0.45, y: canvas.height - 80 },
-        { x: canvas.width * 0.55, y: canvas.height - 80 },
-        { x: canvas.width * 0.70, y: canvas.height - 80 },
-        { x: canvas.width * 0.85, y: canvas.height - 80 }
+        { x: canvas.width * 0.15, y: canvas.height - 80 }, // 位置1: 左側
+        { x: canvas.width * 0.30, y: canvas.height - 80 }, // 位置2: 左中
+        { x: canvas.width * 0.45, y: canvas.height - 80 }, // 位置3: 中左
+        { x: canvas.width * 0.55, y: canvas.height - 80 }, // 位置4: 中右
+        { x: canvas.width * 0.70, y: canvas.height - 80 }, // 位置5: 右中
+        { x: canvas.width * 0.85, y: canvas.height - 80 }  // 位置6: 右側
     ];
     
     const startPos = positions[otherPlayerPosition] || positions[0];
@@ -2826,4 +3270,77 @@ function updateRoomStats(stats) {
             </div>
         `;
     }
-} 
+}
+
+// 切換設定界面（遊戲中使用）
+function toggleSettings() {
+    const settingsModal = document.getElementById('settingsModal');
+    if (settingsModal) {
+        if (settingsModal.style.display === 'flex') {
+            closeSettings();
+        } else {
+            showSettings();
+        }
+    }
+}
+
+// 更新統計資料內容
+function updateStatisticsContent(statistics) {
+    const statsGrid = document.getElementById('statsGrid');
+    if (!statsGrid) return;
+    
+    if (!statistics || statistics.error) {
+        statsGrid.innerHTML = `
+            <div style="text-align: center; padding: 50px; opacity: 0.7;">
+                <p style="color: #ff6b6b;">${statistics?.error || '無法載入統計資料'}</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const stats = [
+        { icon: '🏆', title: '等級', value: statistics.player.level },
+        { icon: '⭐', title: '經驗值', value: formatNumber(statistics.player.experience) },
+        { icon: '💰', title: '總賺取金幣', value: formatNumber(statistics.player.totalCoinsEarned) },
+        { icon: '🎮', title: '遊戲場次', value: formatNumber(statistics.player.totalGamesPlayed) },
+        { icon: '🐟', title: '總捕魚數', value: formatNumber(statistics.player.totalFishCaught) },
+        { icon: '📈', title: '最高分數', value: formatNumber(statistics.player.bestScore) },
+        { icon: '🎯', title: '平均得分', value: formatNumber(Math.floor(statistics.sessions.avgScore)) },
+        { icon: '💵', title: '平均收益', value: formatNumber(Math.floor(statistics.sessions.avgEarned)) },
+        { icon: '🎲', title: '勝率', value: Math.floor((statistics.sessions.lifetimeEarned / statistics.sessions.lifetimeSpent) * 100) + '%' }
+    ];
+    
+    let html = '';
+    stats.forEach(stat => {
+        html += `
+            <div class="stat-card">
+                <div class="stat-icon">${stat.icon}</div>
+                <div class="stat-title">${stat.title}</div>
+                <div class="stat-number">${stat.value}</div>
+            </div>
+        `;
+    });
+    
+    // 添加捕魚統計
+    if (statistics.fishStats && statistics.fishStats.length > 0) {
+        html += `
+            <div style="grid-column: 1 / -1; margin-top: 20px;">
+                <h3 style="text-align: center; margin-bottom: 15px; color: #feca57;">🐟 捕魚統計</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+        `;
+        
+        statistics.fishStats.slice(0, 6).forEach(fish => {
+            html += `
+                <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
+                    <div style="font-weight: bold;">${fish.name}</div>
+                    <div style="font-size: 12px; opacity: 0.7;">捕獲 ${fish.count} 次</div>
+                    <div style="font-size: 12px; color: #feca57;">獲得 ${formatNumber(fish.coins)} 金幣</div>
+                </div>
+            `;
+        });
+        
+        html += '</div></div>';
+    }
+    
+    statsGrid.innerHTML = html;
+}

@@ -21,7 +21,7 @@ function FishGame.SpawnFish(roomId)
     end
     
     local fishSpawned = 0
-    local maxFishInRoom = 20  -- 房間最大魚數量
+    local maxFishInRoom = 30  -- 房間最大魚數量（增加以容納群體魚）
     local currentFishCount = 0
     
     -- 計算當前魚數量
@@ -37,40 +37,94 @@ function FishGame.SpawnFish(roomId)
     -- 根據機率生成不同魚類
     for fishType, fishData in pairs(Config.FishTypes) do
         local spawnRoll = math.random() * 100
-        if spawnRoll <= fishData.spawnChance and fishSpawned < 3 then -- 每次最多生成3條魚
-            roomData.gameData.fishIdCounter = roomData.gameData.fishIdCounter + 1
-            local fishId = 'fish_' .. roomId .. '_' .. roomData.gameData.fishIdCounter
+        if spawnRoll <= fishData.spawnChance and fishSpawned < 5 then -- 每次最多生成5條魚
             
-            roomData.gameData.fish[fishId] = {
-                id = fishId,
-                type = fishType,
-                name = fishData.name,
-                points = fishData.points,
-                health = fishData.health,
-                maxHealth = fishData.health,
-                speed = fishData.speed,
-                size = fishData.size,
-                color = fishData.color,
-                rarity = fishData.rarity,
-                specialEffect = fishData.specialEffect,
-                position = {
-                    x = math.random(-1920, 1920),
-                    y = math.random(-1080, 1080),
-                    z = 0
-                },
-                velocity = {
-                    x = (math.random() - 0.5) * fishData.speed,
-                    y = (math.random() - 0.5) * fishData.speed,
-                    z = 0
-                },
-                rotation = math.random() * 360,
-                spawnTime = currentTime,
-                alive = true,
-                damageByPlayer = {}  -- 追蹤每個玩家對此魚造成的傷害
-            }
+            -- 如果是群體魚，生成多條
+            local spawnCount = 1
+            if fishData.schoolSize then
+                spawnCount = math.random(fishData.schoolSize.min, fishData.schoolSize.max)
+            end
             
-            fishSpawned = fishSpawned + 1
-            roomData.stats.totalFishSpawned = roomData.stats.totalFishSpawned + 1
+            -- 群體魚的中心位置
+            local schoolCenterX = math.random(-1920, 1920)
+            local schoolCenterY = math.random(-1080, 1080)
+            local schoolVelocityX = (math.random() - 0.5) * fishData.speed
+            local schoolVelocityY = (math.random() - 0.5) * fishData.speed
+            
+            for i = 1, spawnCount do
+                if currentFishCount + fishSpawned >= maxFishInRoom then
+                    break
+                end
+                
+                roomData.gameData.fishIdCounter = roomData.gameData.fishIdCounter + 1
+                local fishId = 'fish_' .. roomId .. '_' .. roomData.gameData.fishIdCounter
+                
+                -- 群體魚的位置偏移
+                local offsetX = 0
+                local offsetY = 0
+                if fishData.schoolSize and i > 1 then
+                    offsetX = math.random(-50, 50)
+                    offsetY = math.random(-50, 50)
+                end
+                
+                -- 決定起始位置（如果可以離開螢幕，則可能從螢幕外開始）
+                local startX = schoolCenterX + offsetX
+                local startY = schoolCenterY + offsetY
+                if fishData.canLeaveScreen and math.random() < 0.3 then
+                    -- 30%機率從螢幕外開始
+                    if math.random() < 0.5 then
+                        startX = math.random() < 0.5 and -2200 or 2200
+                        startY = math.random(-1080, 1080)
+                    else
+                        startX = math.random(-1920, 1920)
+                        startY = math.random() < 0.5 and -1300 or 1300
+                    end
+                end
+                
+                local fish = {
+                    id = fishId,
+                    type = fishType,
+                    name = fishData.name,
+                    points = fishData.points,
+                    health = fishData.health,
+                    maxHealth = fishData.health,
+                    speed = fishData.speed,
+                    size = fishData.size,
+                    color = fishData.color,
+                    rarity = fishData.rarity,
+                    specialEffect = fishData.specialEffect,
+                    image = fishData.image,
+                    canLeaveScreen = fishData.canLeaveScreen,
+                    position = {
+                        x = startX,
+                        y = startY,
+                        z = 0
+                    },
+                    velocity = {
+                        x = schoolVelocityX + (math.random() - 0.5) * 0.5, -- 小幅隨機偏移
+                        y = schoolVelocityY + (math.random() - 0.5) * 0.5,
+                        z = 0
+                    },
+                    rotation = math.random() * 360,
+                    spawnTime = currentTime,
+                    alive = true,
+                    damageByPlayer = {},  -- 追蹤每個玩家對此魚造成的傷害
+                    schoolId = fishData.schoolSize and ('school_' .. roomId .. '_' .. currentTime .. '_' .. fishType) or nil
+                }
+                
+                -- 如果是大型魚，初始化倍數系統
+                if fishData.multiplierSystem then
+                    fish.multiplierData = {
+                        currentMultiplier = fishData.multiplierSystem.baseMultiplier,
+                        hitCount = 0,
+                        lastHitTime = 0
+                    }
+                end
+                
+                roomData.gameData.fish[fishId] = fish
+                fishSpawned = fishSpawned + 1
+                roomData.stats.totalFishSpawned = roomData.stats.totalFishSpawned + 1
+            end
         end
     end
     
@@ -99,15 +153,49 @@ function FishGame.UpdateFish(roomId)
             fish.position.x = fish.position.x + fish.velocity.x
             fish.position.y = fish.position.y + fish.velocity.y
             
-            -- 邊界檢查和反彈
-            if fish.position.x > 1920 or fish.position.x < -1920 then
-                fish.velocity.x = -fish.velocity.x
-                fish.position.x = math.max(-1920, math.min(1920, fish.position.x))
+            -- 更新旋轉角度（面向移動方向）
+            if fish.velocity.x ~= 0 or fish.velocity.y ~= 0 then
+                fish.rotation = math.atan2(fish.velocity.y, fish.velocity.x) * 180 / math.pi
             end
             
-            if fish.position.y > 1080 or fish.position.y < -1080 then
-                fish.velocity.y = -fish.velocity.y
-                fish.position.y = math.max(-1080, math.min(1080, fish.position.y))
+            -- 邊界檢查
+            if fish.canLeaveScreen then
+                -- 可以游出螢幕的魚
+                if fish.position.x > 2500 or fish.position.x < -2500 or
+                   fish.position.y > 1500 or fish.position.y < -1500 then
+                    -- 從另一邊返回
+                    if math.random() < 0.5 then
+                        if fish.position.x > 2500 then
+                            fish.position.x = -2500
+                        elseif fish.position.x < -2500 then
+                            fish.position.x = 2500
+                        end
+                        if fish.position.y > 1500 then
+                            fish.position.y = -1500
+                        elseif fish.position.y < -1500 then
+                            fish.position.y = 1500
+                        end
+                    else
+                        -- 改變方向游回來
+                        if fish.position.x > 2500 or fish.position.x < -2500 then
+                            fish.velocity.x = -fish.velocity.x
+                        end
+                        if fish.position.y > 1500 or fish.position.y < -1500 then
+                            fish.velocity.y = -fish.velocity.y
+                        end
+                    end
+                end
+            else
+                -- 不能游出螢幕的魚，在邊界反彈
+                if fish.position.x > 1920 or fish.position.x < -1920 then
+                    fish.velocity.x = -fish.velocity.x
+                    fish.position.x = math.max(-1920, math.min(1920, fish.position.x))
+                end
+                
+                if fish.position.y > 1080 or fish.position.y < -1080 then
+                    fish.velocity.y = -fish.velocity.y
+                    fish.position.y = math.max(-1080, math.min(1080, fish.position.y))
+                end
             end
             
             -- 隨機改變方向
@@ -119,8 +207,34 @@ function FishGame.UpdateFish(roomId)
                 end
             end
             
+            -- 群體魚行為（跟隨附近的同類）
+            if fish.schoolId then
+                local nearbyFish = 0
+                local avgVelX = 0
+                local avgVelY = 0
+                for otherId, otherFish in pairs(roomData.gameData.fish) do
+                    if otherFish.schoolId == fish.schoolId and otherId ~= fishId then
+                        local distance = math.sqrt(
+                            (fish.position.x - otherFish.position.x) ^ 2 +
+                            (fish.position.y - otherFish.position.y) ^ 2
+                        )
+                        if distance < 200 then
+                            nearbyFish = nearbyFish + 1
+                            avgVelX = avgVelX + otherFish.velocity.x
+                            avgVelY = avgVelY + otherFish.velocity.y
+                        end
+                    end
+                end
+                if nearbyFish > 0 then
+                    avgVelX = avgVelX / nearbyFish
+                    avgVelY = avgVelY / nearbyFish
+                    fish.velocity.x = fish.velocity.x * 0.8 + avgVelX * 0.2
+                    fish.velocity.y = fish.velocity.y * 0.8 + avgVelY * 0.2
+                end
+            end
+            
             -- 清理過期魚類
-            if currentTime - fish.spawnTime > 120 then -- 2分鐘後消失
+            if currentTime - fish.spawnTime > 1800 then -- 30分鐘後消失
                 table.insert(fishToRemove, fishId)
             end
         else
@@ -311,6 +425,9 @@ function FishGame.ProcessFishHit(roomId, sessionId, fishId, fish, bullet)
     local roomData = FishGame.Rooms[roomId]
     if not session or not roomData then return end
     
+    local weapon = Config.Weapons[bullet.weaponType]
+    if not weapon then return end
+    
     local damage = bullet.damage
     
     -- 記錄玩家對此魚造成的傷害
@@ -325,6 +442,41 @@ function FishGame.ProcessFishHit(roomId, sessionId, fishId, fish, bullet)
     end
     session.damageDealt[fishId] = session.damageDealt[fishId] + damage
     
+    -- 如果是大型魚，更新倍數系統
+    local fishConfig = Config.FishTypes[fish.type]
+    if fishConfig.multiplierSystem and fish.multiplierData then
+        local currentTime = os.time()
+        fish.multiplierData.hitCount = fish.multiplierData.hitCount + 1
+        fish.multiplierData.lastHitTime = currentTime
+        
+        -- 增加倍數
+        local newMultiplier = fish.multiplierData.currentMultiplier + fishConfig.multiplierSystem.hitIncrement
+        fish.multiplierData.currentMultiplier = math.min(newMultiplier, fishConfig.multiplierSystem.maxMultiplier)
+        
+        -- 檢查隨機死亡
+        if math.random() < fishConfig.multiplierSystem.randomDeathChance then
+            -- 隨機死亡！使用當前倍數
+            fish.health = 0
+            
+            -- 廣播大型魚隨機死亡事件
+            FishGame.BroadcastToRoom(roomId, 'fishgame:bossFishRandomDeath', {
+                fishId = fishId,
+                fishName = fish.name,
+                currentMultiplier = fish.multiplierData.currentMultiplier,
+                hitCount = fish.multiplierData.hitCount
+            })
+        else
+            -- 廣播倍數更新
+            FishGame.BroadcastToRoom(roomId, 'fishgame:bossFishMultiplierUpdate', {
+                fishId = fishId,
+                fishName = fish.name,
+                currentMultiplier = fish.multiplierData.currentMultiplier,
+                hitCount = fish.multiplierData.hitCount,
+                maxMultiplier = fishConfig.multiplierSystem.maxMultiplier
+            })
+        end
+    end
+    
     -- 扣除魚的血量
     fish.health = fish.health - damage
     
@@ -336,16 +488,33 @@ function FishGame.ProcessFishHit(roomId, sessionId, fishId, fish, bullet)
         damage = damage,
         remainingHealth = fish.health,
         maxHealth = fish.maxHealth,
-        weaponType = bullet.weaponType
+        weaponType = bullet.weaponType,
+        weaponMultiplier = weapon.multiplier
     })
     
     if fish.health <= 0 then
         -- 魚死亡，計算獎勵分配
         fish.alive = false
         
-        local fishConfig = Config.FishTypes[fish.type]
         local basePoints = fishConfig.points
         local baseCoinReward = basePoints * 2 -- 1分 = 2金幣
+        
+        -- 應用武器倍數
+        local weaponMultiplier = weapon.multiplier or 1
+        baseCoinReward = baseCoinReward * weaponMultiplier
+        basePoints = basePoints * weaponMultiplier
+        
+        -- 如果是賞金魚，應用賞金倍數
+        if fishConfig.bonusMultiplier then
+            baseCoinReward = baseCoinReward * fishConfig.bonusMultiplier
+            basePoints = basePoints * fishConfig.bonusMultiplier
+        end
+        
+        -- 如果是大型魚，應用累積倍數
+        if fish.multiplierData then
+            baseCoinReward = baseCoinReward * fish.multiplierData.currentMultiplier
+            basePoints = basePoints * fish.multiplierData.currentMultiplier
+        end
         
         -- 找出誰給了最後一擊（獲得基礎獎勵）
         local finalBlowSession = session
@@ -382,7 +551,9 @@ function FishGame.ProcessFishHit(roomId, sessionId, fishId, fish, bullet)
                         coins = finalBlowCoins + contributorBonus,
                         isFinalBlow = true,
                         damageRatio = damageRatio,
-                        damage = contributorDamage
+                        damage = contributorDamage,
+                        weaponUsed = bullet.weaponType,
+                        weaponMultiplier = weaponMultiplier
                     }
                 else
                     -- 其他貢獻者獲得比例獎勵
@@ -392,7 +563,9 @@ function FishGame.ProcessFishHit(roomId, sessionId, fishId, fish, bullet)
                         coins = contributorBonus,
                         isFinalBlow = false,
                         damageRatio = damageRatio,
-                        damage = contributorDamage
+                        damage = contributorDamage,
+                        weaponUsed = 'assist',
+                        weaponMultiplier = 1
                     }
                 end
             end
@@ -415,7 +588,7 @@ function FishGame.ProcessFishHit(roomId, sessionId, fishId, fish, bullet)
                 rewardSession.identifier,
                 fish.type,
                 rewardData.points,
-                bullet.weaponType,
+                rewardData.weaponUsed,
                 1,
                 rewardData.coins,
                 rewardData.damage,
@@ -432,7 +605,9 @@ function FishGame.ProcessFishHit(roomId, sessionId, fishId, fish, bullet)
                 totalCoins = rewardSession.currentCoins,
                 isFinalBlow = rewardData.isFinalBlow,
                 damageRatio = rewardData.damageRatio,
-                contributors = #allRewards
+                contributors = #allRewards,
+                weaponMultiplier = rewardData.weaponMultiplier,
+                fishMultiplier = fish.multiplierData and fish.multiplierData.currentMultiplier or 1
             })
         end
         
@@ -441,13 +616,17 @@ function FishGame.ProcessFishHit(roomId, sessionId, fishId, fish, bullet)
             fishId = fishId,
             fishType = fish.type,
             fishName = fish.name,
+            fishImage = fish.image,
             finalBlowSessionId = sessionId,
             finalBlowPlayerName = session.playerName,
             totalContributors = #allRewards,
             contributors = allRewards,
             specialEffect = fishConfig.specialEffect,
             totalDamage = totalDamage,
-            fishMaxHealth = fish.maxHealth
+            fishMaxHealth = fish.maxHealth,
+            weaponMultiplier = weaponMultiplier,
+            fishMultiplier = fish.multiplierData and fish.multiplierData.currentMultiplier or 1,
+            bonusMultiplier = fishConfig.bonusMultiplier
         })
         
         -- 移除魚類
@@ -470,83 +649,21 @@ function FishGame.ProcessSpecialEffect(roomId, sessionId, effectType, fish, coin
     local roomData = FishGame.Rooms[roomId]
     if not session or not roomData then return coinReward, points end
     
-    if effectType == 'bomb' then
-        -- 炸彈魚：炸死周圍的魚
-        local explosionRadius = 200
+    if effectType == 'screen_bomb' then
+        -- 全螢幕清除（不含大型魚）
         local bonusCoins = 0
         local bonusPoints = 0
-        local explodedFish = {}
+        local clearedFish = {}
         
         for nearbyFishId, nearbyFish in pairs(roomData.gameData.fish) do
             if nearbyFish.alive and nearbyFishId ~= fish.id then
-                local distance = math.sqrt(
-                    (fish.position.x - nearbyFish.position.x) ^ 2 + 
-                    (fish.position.y - nearbyFish.position.y) ^ 2
-                )
-                
-                if distance <= explosionRadius then
+                local nearbyConfig = Config.FishTypes[nearbyFish.type]
+                -- 只清除小型和中型魚
+                if nearbyConfig.rarity ~= 'rare' and nearbyConfig.rarity ~= 'legendary' and nearbyConfig.rarity ~= 'mythic' then
                     nearbyFish.alive = false
-                    local nearbyConfig = Config.FishTypes[nearbyFish.type]
                     bonusPoints = bonusPoints + nearbyConfig.points
                     bonusCoins = bonusCoins + (nearbyConfig.points * 2)
-                    table.insert(explodedFish, {
-                        id = nearbyFishId,
-                        type = nearbyFish.type,
-                        name = nearbyConfig.name,
-                        points = nearbyConfig.points
-                    })
-                    session.fishCaught = session.fishCaught + 1
-                end
-            end
-        end
-        
-        -- 移除爆炸範圍內的魚
-        for _, explodedFishData in ipairs(explodedFish) do
-            roomData.gameData.fish[explodedFishData.id] = nil
-        end
-        
-        coinReward = coinReward + bonusCoins
-        points = points + bonusPoints
-        
-        -- 爆炸特效
-        roomData.gameData.effects['explosion_' .. os.time()] = {
-            type = 'explosion',
-            position = fish.position,
-            radius = explosionRadius,
-            duration = 2000,
-            spawnTime = os.time(),
-            explodedFish = explodedFish,
-            triggerPlayer = session.playerName
-        }
-        
-        -- 廣播爆炸事件
-        FishGame.BroadcastToRoom(roomId, 'fishgame:bombExplosion', {
-            position = fish.position,
-            radius = explosionRadius,
-            explodedFish = explodedFish,
-            triggerPlayer = session.playerName,
-            bonusPoints = bonusPoints,
-            bonusCoins = bonusCoins
-        })
-        
-    elseif effectType == 'lightning' then
-        -- 閃電魚：電擊一條線上的魚
-        local lightningCoins = 0
-        local lightningPoints = 0
-        local struckFish = {}
-        
-        for nearbyFishId, nearbyFish in pairs(roomData.gameData.fish) do
-            if nearbyFish.alive and nearbyFishId ~= fish.id then
-                -- 檢查是否在同一水平或垂直線上
-                local horizontalLine = math.abs(nearbyFish.position.y - fish.position.y) < 50
-                local verticalLine = math.abs(nearbyFish.position.x - fish.position.x) < 50
-                
-                if horizontalLine or verticalLine then
-                    nearbyFish.alive = false
-                    local nearbyConfig = Config.FishTypes[nearbyFish.type]
-                    lightningPoints = lightningPoints + nearbyConfig.points
-                    lightningCoins = lightningCoins + (nearbyConfig.points * 2)
-                    table.insert(struckFish, {
+                    table.insert(clearedFish, {
                         id = nearbyFishId,
                         type = nearbyFish.type,
                         name = nearbyConfig.name,
@@ -558,31 +675,77 @@ function FishGame.ProcessSpecialEffect(roomId, sessionId, effectType, fish, coin
             end
         end
         
-        -- 移除被電擊的魚
-        for _, struckFishData in ipairs(struckFish) do
-            roomData.gameData.fish[struckFishData.id] = nil
+        -- 移除被清除的魚
+        for _, clearedFishData in ipairs(clearedFish) do
+            roomData.gameData.fish[clearedFishData.id] = nil
         end
         
-        coinReward = coinReward + lightningCoins
-        points = points + lightningPoints
+        coinReward = coinReward + bonusCoins
+        points = points + bonusPoints
         
-        -- 閃電特效
-        roomData.gameData.effects['lightning_' .. os.time()] = {
-            type = 'lightning',
-            position = fish.position,
-            duration = 1500,
+        -- 全螢幕清除特效
+        roomData.gameData.effects['screen_clear_' .. os.time()] = {
+            type = 'screen_clear',
+            duration = 2000,
             spawnTime = os.time(),
-            struckFish = struckFish,
+            clearedFish = clearedFish,
             triggerPlayer = session.playerName
         }
         
-        -- 廣播閃電事件
-        FishGame.BroadcastToRoom(roomId, 'fishgame:lightningStrike', {
-            position = fish.position,
-            struckFish = struckFish,
+        -- 廣播全螢幕清除事件
+        FishGame.BroadcastToRoom(roomId, 'fishgame:screenClear', {
+            clearedFish = clearedFish,
             triggerPlayer = session.playerName,
-            bonusPoints = lightningPoints,
-            bonusCoins = lightningCoins
+            bonusPoints = bonusPoints,
+            bonusCoins = bonusCoins
+        })
+        
+    elseif effectType == 'laser_cannon' then
+        -- 變成雷射炮（持續效果）
+        session.tempWeapon = {
+            type = 'cannon_laser',
+            duration = 10000, -- 10秒
+            startTime = os.time()
+        }
+        
+        -- 廣播雷射炮激活事件
+        FishGame.BroadcastToRoom(roomId, 'fishgame:laserCannonActivated', {
+            sessionId = sessionId,
+            playerName = session.playerName,
+            duration = 10000
+        })
+        
+    elseif effectType == 'lucky_wheel' then
+        -- 轉盤抽獎
+        local prizes = {
+            {name = '小獎勵', coinMultiplier = 2, chance = 40},
+            {name = '中獎勵', coinMultiplier = 5, chance = 30},
+            {name = '大獎勵', coinMultiplier = 10, chance = 20},
+            {name = '超級獎勵', coinMultiplier = 20, chance = 8},
+            {name = '頭獎', coinMultiplier = 50, chance = 2}
+        }
+        
+        local roll = math.random() * 100
+        local currentChance = 0
+        local selectedPrize = prizes[1]
+        
+        for _, prize in ipairs(prizes) do
+            currentChance = currentChance + prize.chance
+            if roll <= currentChance then
+                selectedPrize = prize
+                break
+            end
+        end
+        
+        local bonusCoins = coinReward * (selectedPrize.coinMultiplier - 1)
+        coinReward = coinReward * selectedPrize.coinMultiplier
+        
+        -- 廣播轉盤結果
+        FishGame.BroadcastToRoom(roomId, 'fishgame:luckyWheelResult', {
+            sessionId = sessionId,
+            playerName = session.playerName,
+            prize = selectedPrize,
+            bonusCoins = bonusCoins
         })
     end
     

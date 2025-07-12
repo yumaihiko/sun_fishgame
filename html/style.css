@@ -684,53 +684,178 @@ body {
 /* 排行榜 */
 .leaderboard-tabs {
     display: flex;
+    justify-content: center;
+    gap: 10px;
     margin-bottom: 20px;
-    border-radius: 10px;
-    overflow: hidden;
-    background: rgba(255, 255, 255, 0.05);
 }
 
 .tab-btn {
-    flex: 1;
-    background: transparent;
-    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.3);
     color: white;
-    padding: 12px;
+    padding: 10px 20px;
+    border-radius: 20px;
     cursor: pointer;
     transition: all 0.3s ease;
-    font-weight: bold;
 }
 
 .tab-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.2);
 }
 
 .tab-btn.active {
     background: linear-gradient(45deg, #feca57, #ff9ff3);
-    color: #000;
+    border-color: transparent;
+}
+
+/* 排行榜內容 */
+.leaderboard-content {
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: 10px;
+}
+
+.leaderboard-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.leaderboard-content::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
+
+.leaderboard-content::-webkit-scrollbar-thumb {
+    background: linear-gradient(45deg, #feca57, #ff9ff3);
+    border-radius: 10px;
 }
 
 .leaderboard-item {
     display: flex;
-    justify-content: space-between;
     align-items: center;
     padding: 15px;
-    border-radius: 10px;
     margin-bottom: 10px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+    border-radius: 10px;
+    transition: all 0.3s ease;
+    border: 1px solid transparent;
+}
+
+.leaderboard-item:hover {
+    transform: translateX(5px);
+    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 15px rgba(255, 255, 255, 0.1);
 }
 
 .rank {
-    font-size: 18px;
+    font-size: 24px;
     font-weight: bold;
-    width: 40px;
+    width: 50px;
     text-align: center;
+    margin-right: 15px;
 }
 
-.rank.first { color: #ffd700; }
-.rank.second { color: #c0c0c0; }
-.rank.third { color: #cd7f32; }
+.rank.first { 
+    color: #ffd700;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+.rank.second { 
+    color: #c0c0c0;
+    text-shadow: 0 0 10px rgba(192, 192, 192, 0.5);
+}
+.rank.third { 
+    color: #cd7f32;
+    text-shadow: 0 0 10px rgba(205, 127, 50, 0.5);
+}
+
+.player-info-leaderboard {
+    flex: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.player-name-leaderboard {
+    font-weight: bold;
+    font-size: 16px;
+}
+
+.player-stats {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.stat-label {
+    font-size: 10px;
+    opacity: 0.7;
+    text-transform: uppercase;
+}
+
+.stat-value {
+    font-size: 14px;
+    font-weight: bold;
+    color: #feca57;
+}
+
+/* 排行榜載入動畫 */
+.leaderboard-loading {
+    text-align: center;
+    padding: 50px;
+}
+
+.leaderboard-loading .spinner {
+    width: 50px;
+    height: 50px;
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-top: 3px solid #feca57;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+}
+
+/* 統計資料樣式 */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(255, 255, 255, 0.1);
+}
+
+.stat-icon {
+    font-size: 36px;
+    margin-bottom: 10px;
+}
+
+.stat-title {
+    font-size: 12px;
+    opacity: 0.8;
+    margin-bottom: 5px;
+}
+
+.stat-number {
+    font-size: 24px;
+    font-weight: bold;
+    color: #feca57;
+}
 
 /* 特效覆蓋層 */
 .effect-overlay {
